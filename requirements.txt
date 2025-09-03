@@ -1,0 +1,8 @@
+pyserial
+rplidar
+breezyslam
+vosk
+pyttsx3
+flask
+python-dotenv
+openai
