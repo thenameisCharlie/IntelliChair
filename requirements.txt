@@ -6,3 +6,4 @@ pyttsx3
 flask
 python-dotenv
 openai
+RPi.GPIO
