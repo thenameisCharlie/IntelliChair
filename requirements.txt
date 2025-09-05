@@ -1,6 +1,5 @@
 pyserial
 rplidar
-breezyslam
 vosk
 pyttsx3
 flask
