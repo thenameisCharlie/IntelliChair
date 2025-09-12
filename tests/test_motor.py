@@ -1,8 +1,8 @@
 import RPi.GPIO as GPIO
 import time
 
-#Definition of  motor pin 
-IN1 = 20
+#Definition of  motor pin (IN1 - NIN4 decide motor direction ENA and ENB control speed)
+IN1 = 20 
 IN2 = 21
 IN3 = 19
 IN4 = 26
