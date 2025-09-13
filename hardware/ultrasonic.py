@@ -5,42 +5,42 @@ import RPi.GPIO as GPIO
 from utils.config import ULTRASONIC_PINS
 
 #ultrasonic sensor pins
-TRIG_PIN = ULTRASONIC_PINS["TRIG"]
-ECHO_PIN = ULTRASONIC_PINS["ECHO"] 
+_TRIG_PIN = ULTRASONIC_PINS["TRIG"]
+_ECHO_PIN = ULTRASONIC_PINS["ECHO"] 
 
-INITIALIZED = False
+_INITIALIZED = False
 
 #Makes sure the GPIO pins for TRIG and ECHO are set up exactly once
-def ensure_init():
-    global INITIALIZED
-    if INITIALIZED:
+def _ensure_init():
+    global _INITIALIZED
+    if _INITIALIZED:
         return 
     GPIO.setmode(GPIO.BCM) 
     GPIO.setwarnings(False) # hide re-use warnings
-    GPIO.setup(TRIG_PIN, GPIO.OUT, initial=GPIO.LOW) # TRIG idles LOW
-    GPIO.setup(ECHO_PIN, GPIO.IN) # ECHO waits for sensor signal
-    INITIALIZED = True # mark setup complete
+    GPIO.setup(_TRIG_PIN, GPIO.OUT, initial=GPIO.LOW) # TRIG idles LOW
+    GPIO.setup(_ECHO_PIN, GPIO.IN) # ECHO waits for sensor signal
+    _INITIALIZED = True # mark setup complete
 
 def distance_cm(timeout_s = 0.03):
-    ensure_init()
+    _ensure_init()
 
     #Send a 10 µs pulse on TRIG (tell sensor to ping).
-    GPIO.output(TRIG_PIN, GPIO.LOW); time.sleep(2e-6)
-    GPIO.output(TRIG_PIN, GPIO.HIGH); time.sleep(10e-6)
-    GPIO.output(TRIG_PIN, GPIO.LOW)
+    GPIO.output(_TRIG_PIN, GPIO.LOW); time.sleep(2e-6)
+    GPIO.output(_TRIG_PIN, GPIO.HIGH); time.sleep(10e-6)
+    GPIO.output(_TRIG_PIN, GPIO.LOW)
 
     t_start = time.time() #timestamp recorded just before waiting for the echo pulse to begin (reference point to enforce timeout)
     t_rise = time.time() # the exact time the ECHO pin first went HIGH (start of the echo pulse)
     t_fall = time.time() # the exact time the ECHO pin went LOW again (end of the echo pulse)
 
     #Wait for ECHO to go HIGH (pulse leaves sensor)
-    while GPIO.input(ECHO_PIN) == 0:
+    while GPIO.input(_ECHO_PIN) == 0:
         if time.time() - t_start > timeout_s:
             return None
     
     
     #Wait for ECHO to go LOW (pulse returned)
-    while GPIO.input(ECHO_PIN) == 1:
+    while GPIO.input(_ECHO_PIN) == 1:
         if time.time() - t_rise > timeout_s:
             return None
     
