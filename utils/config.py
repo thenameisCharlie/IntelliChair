@@ -1,0 +1,9 @@
+
+#BCM numbering linked to the hardware channels on Raspberry Pi's Broadcom microprocessor
+PINS = {"IN1": 20, "IN2": 21, "IN3": 19, "IN4": 26, "ENA": 16, "ENB": 13} # Motor pins
+ULTRASONIC_PINS = {"TRIG": 1, "ECHO": 0} # Ultrasonic pins
+LEDS = {"R": 22, "G": 27, "B": 24} # LEDs
+SERVO = {"PIN": 23} # Servo pin
+
+PWM_FREQ_HZ = 2000 #the rate at which the signal repeats its on/off cycle (Hz)
+

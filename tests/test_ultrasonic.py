@@ -242,19 +242,6 @@ def servo_color_carstate():
 # delay 2s	
 time.sleep(2)
 
-# The try/except statement is used to detect errors in the try block.
-# the except statement catches the exception information and processes it.
-# try:
-#     init()
-#     key_scan()
-#     while True:
-#         distance = Distance_test()
-#         if distance > 50:
-#             run(55, 55)
-#         elif 30 <= distance <= 50:
-#             run(45, 45)
-#         elif distance < 30:
-#             servo_color_carstate()
 try:
     init()
     # key_scan()  # ← comment this out while testing if the button isn’t wired
@@ -276,7 +263,6 @@ try:
         else:
             print("Obstacle < 30 cm → scan & evade")
             servo_color_carstate()  # this sweeps the servo and turns
-
 
 
 except KeyboardInterrupt:
