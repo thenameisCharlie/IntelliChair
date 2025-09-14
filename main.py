@@ -2,6 +2,7 @@ import time
 from hardware.ultrasonic import distance_filtered_cm
 from hardware.motors import YahboomMotors
 from utils.config import TUNABLES
+from utils import config
 
 THRESH_CM = TUNABLES["THRESH_CM"]
 CRUISE_SPEED = TUNABLES["CRUISE_SPEED"]
@@ -10,6 +11,8 @@ SLOW_BAND = TUNABLES["SLOW_BAND"]
 SPIN_SPEED = TUNABLES["SPIN_SPEED"]
 SPIN_TIME_S = TUNABLES["SPIN_TIME_S"]
 LOOP_DT = TUNABLES["LOOP_DT"]
+
+print("[boot] ULTRASONIC pins:", config.ULTRASONIC, "from", config.__file__)
 
 def autonomy_loop():
     motors = YahboomMotors()
