@@ -1,5 +1,4 @@
 # Purpose: Handle distance measurement using an HC-SR04-style ultrasonic sensor.
-
 import time
 import RPi.GPIO as GPIO
 from utils.config import ULTRASONIC_PINS
