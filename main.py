@@ -12,7 +12,7 @@ SPIN_SPEED = TUNABLES["SPIN_SPEED"]
 SPIN_TIME_S = TUNABLES["SPIN_TIME_S"]
 LOOP_DT = TUNABLES["LOOP_DT"]
 
-print("[boot] ULTRASONIC pins:", config.ULTRASONIC, "from", config.__file__)
+print("[boot] ULTRASONIC pins:", config.ULTRASONIC_PINS, "from", config.__file__)
 
 def autonomy_loop():
     motors = YahboomMotors()

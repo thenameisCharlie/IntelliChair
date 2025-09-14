@@ -52,7 +52,7 @@ class YahboomMotors:
 
     #Both treads forward at the same power
     def forward(self, speed_pct=50):
-        self.left_dir(True); self._right_dir(True)
+        self._left_dir(True); self._right_dir(True)
         self._set_speed(speed_pct, speed_pct)
 
     #Both treads backward at the same power
