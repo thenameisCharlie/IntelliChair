@@ -3,6 +3,7 @@ import time
 import RPi.GPIO as GPIO
 from utils.config import ULTRASONIC_PINS
 
+
 #ultrasonic sensor pins
 _TRIG_PIN = ULTRASONIC_PINS["TRIG"]
 _ECHO_PIN = ULTRASONIC_PINS["ECHO"] 

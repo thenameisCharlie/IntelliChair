@@ -1,6 +1,7 @@
 import time
 from hardware.ultrasonic import distance_filtered_cm
 from hardware.motors import YahboomMotors
+from hardware.servo import set_angle, center
 from utils.config import TUNABLES
 
 
@@ -14,25 +15,47 @@ LOOP_DT = TUNABLES["LOOP_DT"]
 STOP_CM   = THRESH_CM           # e.g. 30
 RESUME_CM = STOP_CM + 8         # only resume when > 38
 
-#
-def avoid_blocked(motors: YahboomMotors, prefer_right=True)-> None:
+#Aim servo to right/center/left, sample distances, pick the best side.
+# def pick_turn_direction(sample_fn, near_cm=30):
+#     readings = []
+
+#     for angle, label in [(45, "right"), (90, "center"), (135, "left")]:
+#         set_angle(angle)
+#         d = sample_fn()
+#         readings.append((label, d if d is not None else 0))
+#     center()
+
+#     best_label, best_d = max(readings, key=lambda x: x[1])
+
     
+#     return best_label if best_d >= near_cm else "none"
+
+def pick_turn_direction(sample_fn, near=THRESH_CM):
+    readings=[]
+    for angle,label in [(45,"right"),(90,"center"),(135,"left")]:
+        set_angle(angle)
+        d = sample_fn()
+        readings.append((label, d if d is not None else 0))
+    center()
+    best = max(readings, key=lambda x:x[1])
+    return best[0] if best[1] >= near else "none"
+
+
+def avoid_blocked(motors, prefer_right=True):
     motors.stop()
-    if prefer_right:
+    turn = pick_turn_direction(distance_filtered_cm, near=THRESH_CM)
+    if turn == "left":
+        motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S)
+    elif turn == "right":
         motors.spin_right(SPIN_SPEED); time.sleep(SPIN_TIME_S)
     else:
-        motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S)
-    motors.stop(); time.sleep(0.05)
-
-    d2 = distance_filtered_cm()
-    if d2 is None or d2 < THRESH_CM:
-        # still blocked → back up and try the other direction
         motors.backward(40); time.sleep(0.35); motors.stop()
         if prefer_right:
-            motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S * 1.3)
+            motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S*1.3)
         else:
-            motors.spin_right(SPIN_SPEED); time.sleep(SPIN_TIME_S * 1.3)
-        motors.stop(); time.sleep(0.05)
+            motors.spin_right(SPIN_SPEED); time.sleep(SPIN_TIME_S*1.3)
+    motors.stop(); time.sleep(0.05)
+
 
 #
 def autonomy_loop():
@@ -73,51 +96,6 @@ def autonomy_loop():
             time.sleep(LOOP_DT)
     finally:
         motors.shutdown()
-
-
-# def autonomy_loop():
-#     motors = YahboomMotors()
-#     stuck_count = 0
-#     prefer_right = True
-
-#     try:
-#         while True:
-#             d = distance_filtered_cm()
-
-#             if d is None:
-#                 print("[autonomy] ultrasonic: no reading → stop")
-#                 motors.stop()
-#                 time.sleep(LOOP_DT)
-#                 continue
-
-#             print(f"[autonomy] ultrasonic: {d:.1f} cm")
-
-#             # Emergency: very close
-#             if d < THRESH_CM:
-#                 print("[autonomy] EMERGENCY: obstacle close → avoid")
-#                 avoid_blocked(motors, prefer_right=prefer_right)
-#                 stuck_count += 1
-#                 # Flip preference if we’ve been stuck a few times
-#                 if stuck_count >= 3:
-#                     prefer_right = not prefer_right
-#                     stuck_count = 0
-#                 time.sleep(LOOP_DT)
-#                 continue
-
-#             # Clear path: reset stuck counter
-#             stuck_count = 0
-
-#             # Approach band: slow down
-#             if SLOW_BAND[0] <= d <= SLOW_BAND[1]:
-#                 print(f"[autonomy] slow band {SLOW_BAND} → forward {SLOW_SPEED}%")
-#                 motors.forward(SLOW_SPEED)
-#             else:
-#                 print(f"[autonomy] cruise → forward {CRUISE_SPEED}%")
-#                 motors.forward(CRUISE_SPEED)
-
-#             time.sleep(LOOP_DT)
-#     finally:
-#         motors.shutdown()
 
 
 if __name__ == "__main__":
