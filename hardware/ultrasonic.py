@@ -51,7 +51,7 @@ def distance_cm(timeout_s = 0.03):
     return pulse * 343.0 * 100.0 / 2.0
 
 #Take multiple ultrasonic readings, filter noise, and return a stable value.
-def distance_filtered_cm(n = 5.0):
+def distance_filtered_cm(n = 5):
     vals = []
 
     for _ in range(n):
