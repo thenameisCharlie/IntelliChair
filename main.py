@@ -16,20 +16,6 @@ STOP_CM   = THRESH_CM           # e.g. 30
 RESUME_CM = STOP_CM + 8         # only resume when > 38
 
 #Aim servo to right/center/left, sample distances, pick the best side.
-# def pick_turn_direction(sample_fn, near_cm=30):
-#     readings = []
-
-#     for angle, label in [(45, "right"), (90, "center"), (135, "left")]:
-#         set_angle(angle)
-#         d = sample_fn()
-#         readings.append((label, d if d is not None else 0))
-#     center()
-
-#     best_label, best_d = max(readings, key=lambda x: x[1])
-
-    
-#     return best_label if best_d >= near_cm else "none"
-
 def pick_turn_direction(sample_fn, near=THRESH_CM):
     readings=[]
     for angle,label in [(45,"right"),(90,"center"),(135,"left")]:
