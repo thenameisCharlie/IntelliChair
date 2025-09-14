@@ -4,7 +4,7 @@ PINS = {"IN1": 20, "IN2": 21, "IN3": 19, "IN4": 26, "ENA": 16, "ENB": 13} # Moto
 ULTRASONIC_PINS = {"TRIG": 1, "ECHO": 0} # Ultrasonic pins
 LEDS = {"R": 22, "G": 27, "B": 24} # LEDs
 SERVO = {"PIN": 23} # Servo pin
-TUNABLES = {"THRESH_CM": 40, "CRUISE_SPEED": 35, "SLOW_SPEED": 25, "SLOW_BAND": (30, 35), "SPIN_SPEED": 45, "SPIN_TIME_S": 0.30, "LOOP_DT": 0.05}
+TUNABLES = {"THRESH_CM": 40, "CRUISE_SPEED": 37, "SLOW_SPEED": 32, "SLOW_BAND": (30, 45), "SPIN_SPEED": 45, "SPIN_TIME_S": 0.30, "LOOP_DT": 0.05}
 
 PWM_FREQ_HZ = 2000 #the rate at which the signal repeats its on/off cycle (Hz)
 
