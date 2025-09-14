@@ -1,4 +1,4 @@
-# Purpose: Handle distance measurement using an HC-SR04-style ultrasonic sensor.
+# # Purpose: Handle distance measurement using an HC-SR04-style ultrasonic sensor.
 import time
 import RPi.GPIO as GPIO
 from utils.config import ULTRASONIC_PINS
@@ -17,8 +17,8 @@ def _ensure_init():
     GPIO.setmode(GPIO.BCM) 
     GPIO.setwarnings(False) # hide re-use warnings
     GPIO.setup(_TRIG_PIN, GPIO.OUT, initial=GPIO.LOW) # TRIG idles LOW
-    GPIO.setup(_ECHO_PIN, GPIO.IN) # ECHO waits for sensor signal
-    # GPIO.setup(_ECHO_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    # GPIO.setup(_ECHO_PIN, GPIO.IN) # ECHO waits for sensor signal
+    GPIO.setup(_ECHO_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
     
     _INITIALIZED = True # mark setup complete
 
@@ -76,4 +76,3 @@ def distance_filtered_cm(n: int = 5) -> float | None:
         return (vals[mid-1] + vals[mid] + vals[mid+1]) / 3.0
     return vals[mid]
 
-    
