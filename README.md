@@ -20,6 +20,42 @@ Adaptive Navigation: Integration of SLAM (Simultaneous Localization and Mapping)
 - flask (option if interface is created)
 
 ### Setup
+git clone https://github.com/thenameisCharlie/IntelliChair.git
+cd intellichair
+python -m venv .venv
+source .venv/bin/activate
+pip install requirements.txt
+
+###Hardware Configuration
+- Connect TB6612FNG motor driver to Raspberry Pi GPIO
+- Wire HC-SR04 ultrasonic sensor (TRIG/ECHO + VCC/GND)
+
+## Usage
+Run the main control loop:
+python main.py
+
+Edit config.py to adjust:
+- Pin assignments
+- Distance thresholds
+- Speed settings
+
+## Hardware Requirments
+- Yahboom G1 Tank
+- Raspberry Pi 4
+- BST-4WD multi-functional expansion board
+- HC-SR04 ultrasonic sensor
+- Motor driver (TB6612FNG)
+- LiDAR (RPLIDAR A1)
+- Microphone for voice input
+
+## Software Requirements
+- OS: Raspberry Pi OS or Ubuntu 22.04 (on Pi)
+- Python 3.10+
+- Libraries: RPi.GPIO, time
+- (Future) LiDAR + speech libraries
+
+
+
 
 
 
