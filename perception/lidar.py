@@ -40,10 +40,11 @@ def run():
                         xs.append(x)
                         ys.append(y)
                         cs.append(distance) #shows colors by distance
-                    scatter.set_offsets(np.c_[xs, ys]) #updates scatter plot with fresh data
-                    scatter.set_array(np.array(cs))
-                    plt.draw()
-                    plt.pause(0.01) #plot refreshing
+                    if xs and ys:
+                        scatter.set_offsets(np.c_[xs, ys]) #updates scatter plot with fresh data
+                        scatter.set_array(np.array(cs))
+                        plt.draw()
+                        plt.pause(0.01) #plot refreshing
             except RPLidarException as e:
                 print("RPLidar error:",e, "-> restarting scan...")
                 lidar.stop()
