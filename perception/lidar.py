@@ -1,11 +1,10 @@
-#script directly on local machine
 import matplotlib.pyplot as plt
 import numpy as np
 import math
 import time
 from rplidar import RPLidar, RPLidarException
 
-PORT = '/dev/ttyUSB0' #lidar's serial port, erase after it is a placeholder
+PORT = '/dev/ttyUSB0' #lidar's serial port
 #port name on linux/macos = /dev/ttyUSB0
 #port name on windows = COM3 or COM4
 def run():
@@ -14,7 +13,6 @@ def run():
     
    
     fig, ax = plt.subplots() #visualizes data into cartesian plot
-    # 2nd revision-line, = ax.plot(angles, scan_data) #initalize line plot
     scatter = ax.scatter([], [], c=[], cmap = 'jet', s=5,
     vmin = 0, vmax = 4000) #empty scatter plot
     robot_dot, = ax.plot(0,0, 'ro', markersize = 8, label = "Robot")
@@ -31,6 +29,7 @@ def run():
         while True:
             try:
                 #makes for continuous 360 degree scans at around 5-10 Hz
+                #5-10 hz means 5 to 10 full 360 degree scans per second
                 for scan in lidar.iter_scans():
                     xs, ys, cs = [], [], []
                     for (_, angle, distance) in scan:
@@ -63,5 +62,5 @@ def run():
         plt.show()
 if __name__ == '__main__': #differentiates main program from imported module
     run()
-#5-10 hz means 5 to 10 full 360 degree scans per second
+
 
