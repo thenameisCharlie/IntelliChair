@@ -10,10 +10,16 @@ import subprocess
 import signal
 import sys
 import time
+import threading
+sys.path.append(os.path.expanduser("~/IntelliChair"))
+from navigation import teleop
 
+
+
+# Save maps here
 MAP_NAME = "map"
-
 slam_proc = None
+teleop_proc = None
 
 def start_slam():
     
@@ -25,36 +31,38 @@ def start_slam():
     slam_proc = subprocess.Popen([
         "bash", "-i", "-c",
         "source /opt/ros/humble/setup.bash && "
-        "source ~/ros2_ws/install/setup.bash && "
+        "source /home/robotpi/ros2_ws/install/setup.bash && "
         "ros2 run slam_toolbox sync_slam_toolbox_node"
     ])
     time.sleep(5)  # give it time to start up
 
-#def teleop_drive():
-    
-    #Run teleop while SLAM is active.
-    
-    #print("[slam] Launching teleop. Drive robot to explore.")
-    #subprocess.call(["python3", "navigation/teleop.py"])
+def start_teleop():
+    #Start teleop so user can drive with keyboard.
+    global teleop_proc
+    print("[slam] Starting teleop (keyboard)...")
+    teleop_proc = subprocess.Popen([
+        "python3",
+        os.path.expanduser("~/IntelliChair/navigation/teleop.py")
+    ])
+    time.sleep(1)
 
 def save_map():
     
     #Save map as map.pgm and map.yaml into ./maps
-    
     print(f"[slam] Saving map -> {MAP_NAME}.pgm / {MAP_NAME}.yaml")
     try:
         subprocess.run([
             "bash", "-i", "-c",
             "source /opt/ros/humble/setup.bash && "
-            "source ~/ros2_ws/install/setup.bash && "
+            "source /home/robotpi/ros2_ws/install/setup.bash && "
             f"ros2 run nav2_map_server map_saver_cli -f {MAP_NAME}"
         ], check=True)
         print("[slam] Map saved successfully.")
     except subprocess.CalledProcessError:
         print("[slam] ERROR: Failed to save map!")
 
+
 def stop_slam():
-    #Stop SLAM process cleanly
     global slam_proc
     if slam_proc:
         print("[slam] Stopping SLAM...")
@@ -62,14 +70,24 @@ def stop_slam():
         slam_proc.wait()
         print("[slam] SLAM stopped.")
 
+def stop_teleop():
+    global teleop_proc
+    if teleop_proc:
+        print("[slam] Stopping teleop...")
+        teleop_proc.send_signal(signal.SIGINT)
+        teleop_proc.wait()
+        print("[slam] Teleop stopped.")
+
+
+
 def run_slam_session():
     
-    #Main flow: start SLAM, run teleop, save map, stop SLAM.
-    
+    #Main flow: start SLAM, run teleop, save map, stop SLAM
     try:
         start_slam()
-        print("[slam] SLAM running. Use teleop to drive the robot.")
-        print("Press Ctrl+C when finished to save map and exit.")
+        start_teleop()
+        print("[slam] SLAM + teleop running. Drive robot to explore.")
+        print("Press Ctrl+C to stop and save map.")
         while True:
             if slam_proc.poll() is not None:
                 print("[slam] SLAM process ended unexpectedly.")
@@ -78,8 +96,9 @@ def run_slam_session():
     except KeyboardInterrupt:
         print("\n[slam] Stopping session...")
     finally:
-        save_map()
+        stop_teleop()
         stop_slam()
+        save_map()
         print("[slam] Session complete.")
 
 if __name__ == "__main__":
