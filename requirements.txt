@@ -1,8 +1,11 @@
 pyserial
 rplidar
-breezyslam
 vosk
 pyttsx3
 flask
 python-dotenv
 openai
+
+# GPIO only if on Raspberry Pi
+RPi.GPIO; platform_system == "Linux"
+pigpio; platform_system == "Linux"
