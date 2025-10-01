@@ -7,101 +7,61 @@ SLAM mapping wrapper for Yahboom G1 Tank
 
 import os
 import subprocess
-import signal
-import sys
 import time
-import threading
-sys.path.append(os.path.expanduser("~/IntelliChair"))
-from navigation import teleop
 
+MAP_DIR = os.path.join(os.getcwd(), "maps")
+MAP_BASENAME = "map"
 
-
-# Save maps here
-MAP_NAME = "map"
-slam_proc = None
-teleop_proc = None
+def ensure_map_dir():
+    if not os.path.exists(MAP_DIR):
+        os.makedirs(MAP_DIR)
 
 def start_slam():
-    
-    #Start SLAM (gmapping or slam_toolbox). 
-    #Assumes ROS2 is already running and LiDAR publishes to /scan.
-    
-    global slam_proc
-    print("[slam] Starting SLAM...")
-    slam_proc = subprocess.Popen([
-        "bash", "-i", "-c",
-        "source /opt/ros/humble/setup.bash && "
-        "source /home/robotpi/ros2_ws/install/setup.bash && "
-        "ros2 run slam_toolbox sync_slam_toolbox_node"
+    #Launch slam_toolbox or gmapping as a subprocess.
+    #Popen (non-blocking)
+    env = os.environ.copy()
+    env["PATH"] = "/opt/ros/humble/bin:" + env["PATH"]
+
+    return subprocess.Popen(
+        ["ros2", "launch", "slam_toolbox", "online_async_launch.py"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+def save_map(basename=MAP_BASENAME):
+    #Call map_saver to write out map.pgm + map.yaml.
+    ensure_map_dir()
+    map_path = os.path.join(MAP_DIR, basename)
+    print(f"[slam] Saving map → {map_path}.pgm/.yaml ...")
+    subprocess.run([
+        "ros2", "run", "nav2_map_server", "map_saver_cli",
+        "-f", map_path
     ])
-    time.sleep(5)  # give it time to start up
+    print("[slam] Map saved.")
 
-def start_teleop():
-    #Start teleop so user can drive with keyboard.
-    global teleop_proc
-    print("[slam] Starting teleop (keyboard)...")
-    teleop_proc = subprocess.Popen([
-        "python3",
-        os.path.expanduser("~/IntelliChair/navigation/teleop.py")
+def load_map(basename=MAP_BASENAME):
+    #Launch nav2_map_server to reload a saved map.
+    map_path = os.path.join(MAP_DIR, basename + ".yaml")
+    if not os.path.exists(map_path):
+        print(f"[slam] ERROR: Map {map_path} not found.")
+        return None
+    print(f"[slam] Loading map {map_path} ...")
+    return subprocess.Popen([
+        "ros2", "launch", "nav2_bringup", "bringup_launch.py",
+        "map:=" + map_path
     ])
-    time.sleep(1)
-
-def save_map():
-    
-    #Save map as map.pgm and map.yaml into ./maps
-    print(f"[slam] Saving map -> {MAP_NAME}.pgm / {MAP_NAME}.yaml")
-    try:
-        subprocess.run([
-            "bash", "-i", "-c",
-            "source /opt/ros/humble/setup.bash && "
-            "source /home/robotpi/ros2_ws/install/setup.bash && "
-            f"ros2 run nav2_map_server map_saver_cli -f {MAP_NAME}"
-        ], check=True)
-        print("[slam] Map saved successfully.")
-    except subprocess.CalledProcessError:
-        print("[slam] ERROR: Failed to save map!")
-
-
-def stop_slam():
-    global slam_proc
-    if slam_proc:
-        print("[slam] Stopping SLAM...")
-        slam_proc.send_signal(signal.SIGINT)
-        slam_proc.wait()
-        print("[slam] SLAM stopped.")
-
-def stop_teleop():
-    global teleop_proc
-    if teleop_proc:
-        print("[slam] Stopping teleop...")
-        teleop_proc.send_signal(signal.SIGINT)
-        teleop_proc.wait()
-        print("[slam] Teleop stopped.")
-
-
-
-def run_slam_session():
-    
-    #Main flow: start SLAM, run teleop, save map, stop SLAM
-    try:
-        start_slam()
-        start_teleop()
-        print("[slam] SLAM + teleop running. Drive robot to explore.")
-        print("Press Ctrl+C to stop and save map.")
-        while True:
-            if slam_proc.poll() is not None:
-                print("[slam] SLAM process ended unexpectedly.")
-                break
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n[slam] Stopping session...")
-    finally:
-        stop_teleop()
-        stop_slam()
-        save_map()
-        print("[slam] Session complete.")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        MAP_NAME = sys.argv[1]
-    run_slam_session()
+    # Demo: start SLAM, wait, then save map
+    slam_proc = start_slam()
+    try:
+        print("[slam] Running... Drive robot around with teleop or autonomy.")
+        while True:
+            time.sleep(2)
+    except KeyboardInterrupt:
+        print("\n[slam] Ctrl+C → stopping and saving map.")
+        save_map()
+        slam_proc.terminate()
+        slam_proc.wait()
+
