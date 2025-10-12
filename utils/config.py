@@ -8,3 +8,5 @@ TUNABLES = {"THRESH_CM": 40, "CRUISE_SPEED": 37, "SLOW_SPEED": 32, "SLOW_BAND": 
 
 PWM_FREQ_HZ = 2000 #the rate at which the signal repeats its on/off cycle (Hz)
 
+# RGB LED pins (BCM numbering)
+LEDS = {"R": 22, "G": 27, "B": 24}

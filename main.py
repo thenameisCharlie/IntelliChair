@@ -29,19 +29,26 @@ def pick_turn_direction(sample_fn, near=THRESH_CM):
 
 
 def avoid_blocked(motors, prefer_right=True):
+    cyan()
     motors.stop()
+
     turn = pick_turn_direction(distance_filtered_cm, near=THRESH_CM)
     if turn == "left":
+        blue()
         motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S)
     elif turn == "right":
+        magenta()
         motors.spin_right(SPIN_SPEED); time.sleep(SPIN_TIME_S)
     else:
         motors.backward(40); time.sleep(0.35); motors.stop()
         if prefer_right:
+            blue()
             motors.spin_left(SPIN_SPEED);  time.sleep(SPIN_TIME_S*1.3)
         else:
+            magenta()
             motors.spin_right(SPIN_SPEED); time.sleep(SPIN_TIME_S*1.3)
     motors.stop(); time.sleep(0.05)
+    green()
 
 
 #
@@ -55,6 +62,7 @@ def autonomy_loop():
             d = distance_filtered_cm()
 
             if d is None:
+                red()
                 print("[autonomy] ultrasonic: no reading → stop")
                 motors.stop()
                 time.sleep(LOOP_DT)
@@ -64,26 +72,33 @@ def autonomy_loop():
 
             # Emergency: very close
             if d < STOP_CM:
+                red()
                 print("[autonomy] EMERGENCY: obstacle close → avoid")
                 avoid_blocked(motors)
+                time.sleep(LOOP_DT)
+                continue
 
             elif d <= RESUME_CM:
+                yellow()
                 # When it reaches 30–38 cm don’t blast forward
                 print(f"[autonomy] ({STOP_CM}, {RESUME_CM}) slow {SLOW_SPEED}%")
                 motors.forward(SLOW_SPEED)
 
             elif SLOW_BAND[0] <= d <= SLOW_BAND[1]:
                 # regular slow-approach zone
+                yellow()
                 print(f"[autonomy] slow band {SLOW_BAND} forward {SLOW_SPEED}%")
                 motors.forward(SLOW_SPEED)
 
             else:
+                green()
                 print(f"[autonomy] cruise forward {CRUISE_SPEED}%")
                 motors.forward(CRUISE_SPEED)
 
 
             time.sleep(LOOP_DT)
     finally:
+        off()
         motors.shutdown()
 
 
