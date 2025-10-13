@@ -2,11 +2,68 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import time
+import json
+import os
+import threading
 from rplidar import RPLidar, RPLidarException
+
+#current robot pose stored here and accessed via get_pose/update_pose()
+_pose_lock = threading.Lock()
+_current_pose = [0.0, 0.0, 0.0]
 
 PORT = '/dev/ttyUSB0' #lidar's serial port
 #port name on linux/macos = /dev/ttyUSB0
 #port name on windows = COM3 or COM4
+
+BAUDRATE = 115200
+
+def update_pose(x, y, theta):
+    """Update the estimated robot pose."""
+    with _pose_lock:
+        _current_pose[0] = x
+        _current_pose[1] = y
+        _current_pose[2] = theta
+
+def get_pose():
+    """Return the most recent pose estimate (x, y, theta)."""
+    with _pose_lock:
+        return tuple(_current_pose)
+
+def lidar_thread(port=PORT, baudrate=BAUDRATE):
+    """Continuously read lidar scans and update robot pose."""
+    try:
+        lidar = RPLidar(port, baudrate)
+        print("[lidar] Connected & scanning...")
+        total_rotation = 0.0
+
+        for scan in lidar.iter_scans():  # scan is a list of (quality, angle, distance)
+            if not scan:
+                continue
+            # Compute average distance
+            distances = [d for q, a, d in scan if d > 0]
+            avg_dist = sum(distances)/len(distances) if distances else 0.0
+
+            # Simple pose simulation
+            total_rotation += 0.01  # incremental rotation
+            x = avg_dist * math.cos(total_rotation) / 2000.0
+            y = avg_dist * math.sin(total_rotation) / 2000.0
+            theta = total_rotation
+
+            update_pose(x, y, theta)
+            time.sleep(0.05)
+
+    except RPLidarException as e:
+        print(f"[lidar] RPLidar error: {e}")
+    except Exception as e:
+        print(f"[lidar] Error: {e}")
+    finally:
+        try:
+            lidar.stop()
+            lidar.disconnect()
+        except:
+            pass
+        print("[lidar] Stopped.")
+
 def run():
     lidar = RPLidar(PORT) #object to communicate with the sensor
     print("Starting RPLidar...")
@@ -61,6 +118,13 @@ def run():
         plt.ioff()
         plt.show()
 if __name__ == '__main__': #differentiates main program from imported module
-    run()
+    #run()
+    t = threading.Thread(target=lidar_thread, daemon=True)
+    t.start()
 
-
+    try:
+        while True:
+            print("[pose]", get_pose())
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        print("[lidar] Exiting...")

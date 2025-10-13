@@ -3,8 +3,7 @@ from hardware.ultrasonic import distance_filtered_cm
 from hardware.motors import YahboomMotors
 from hardware.servo import set_angle, center
 from utils.config import TUNABLES
-from hardware.leds import red, green, yellow, blue, magenta, cyan, off
-
+from perception.slam import start_slam, save_map
 
 
 THRESH_CM = TUNABLES["THRESH_CM"]
@@ -54,6 +53,8 @@ def avoid_blocked(motors, prefer_right=True):
 
 #
 def autonomy_loop():
+    print("[debug] autonomy_loop started")
+
     motors = YahboomMotors()
 
     try:
@@ -101,9 +102,23 @@ def autonomy_loop():
         motors.shutdown()
 
 
+def slam_autonomy():
+    slam_proc = start_slam()
+    try:
+        print("[autonomy+slam] Exploring... (Ctrl+C to stop)")
+        autonomy_loop()   #avoid/drive loop
+    except KeyboardInterrupt:
+        print("\n[autonomy+slam] Stopping SLAM + saving map.")
+        save_map()
+    finally:
+        slam_proc.terminate()
+        slam_proc.wait()
+
 if __name__ == "__main__":
     try:
-        print("[autonomy] Motors + ultrasonic running together. Ctrl+C to stop.")
-        autonomy_loop()
+        #print("[autonomy] Motors + ultrasonic running together. Ctrl+C to stop.")
+        #autonomy_loop()
+        print("[slam_autonomy] Motors + ultrasonic running together. Ctrl+C to stop.")
+        slam_autonomy()
     except KeyboardInterrupt:
         print("\nExiting cleanly.")
