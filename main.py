@@ -11,6 +11,47 @@ Examples:
   python3 main.py test-motors
   python3 main.py test-leds
   python3 main.py servo-center
+
+
+
+==============================
+ Intellichair Main.py Modes
+==============================
+
+1. teleop
+   Command:
+     python3 main.py teleop
+   Description:
+     - Manual driving mode using the keyboard.
+     - Controls: W/A/S/D to move, SPACE to stop, Q to quit.
+     - Useful for testing motors or manually exploring a space.
+
+2. autonomy
+   Command:
+     python3 main.py autonomy
+   Description:
+     - Fully automatic navigation mode.
+     - Robot drives forward, slows near obstacles, and stops/turns when blocked.
+     - Uses the ultrasonic sensor + servo sweep to pick a free direction.
+     - SLAM runs in the background; map is saved on exit.
+
+3. teach
+   Command:
+     python3 main.py teach
+   Description:
+     - Manual mapping mode.
+     - Starts SLAM while you drive the robot manually (teleop).
+     - When you quit teleop, it saves the generated map.
+     - Ideal for “teaching” the robot a room layout.
+
+4. teach-auto
+   Command:
+     python3 main.py teach-auto
+   Description:
+     - Hybrid mapping + autonomy.
+     - First runs teleop with SLAM so you can manually explore and build a map.
+     - When you quit teleop, the system automatically saves the map and switches into autonomy mode.
+     - Great for demos: “We map manually, then it drives itself.”
 """
 
 import sys, time, argparse
