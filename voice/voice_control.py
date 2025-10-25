@@ -5,7 +5,7 @@ from voice.tts import speak
 from navigation.navigator import Navigator
 
 # Default model path; user can override via ENV VOSK_MODEL_PATH
-MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/home/pi/models/vosk-en")
+MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/home/robotpi/models/vosk-en")
 
 def run():
     nav = Navigator()
