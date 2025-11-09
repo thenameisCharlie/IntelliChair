@@ -1,8 +1,8 @@
 # voice/command_listener.py
 import os
 import json
-import time
 import queue
+import time
 import threading
 from typing import Generator, Optional
 
@@ -32,7 +32,7 @@ class CommandListener:
         self.stop_flag = threading.Event()
         self.stream: Optional[sd.RawInputStream] = None
 
-        grammar = json.dumps(PHRASES + ["[unk]"])
+        grammar = json.dumps(PHRASES)
         self.rec = KaldiRecognizer(self.model, self.sample_rate_fallback, grammar)
 
         # Debounce tracking
@@ -63,11 +63,12 @@ class CommandListener:
         try:
             info = sd.query_devices(device)
             sr = int(info.get("default_samplerate") or self.sample_rate_fallback)
+            self.current_sr = sr
         except Exception:
             sr = self.sample_rate_fallback
 
         # Rebuild recognizer for this samplerate
-        grammar = json.dumps(PHRASES + ["[unk]"])
+        grammar = json.dumps(PHRASES)
         self.rec = KaldiRecognizer(self.model, sr, grammar)
 
         # Small blocks for fast turnaround: ~60–125 ms
@@ -101,7 +102,12 @@ class CommandListener:
         for snappy emergency halts.
         """
         while not self.stop_flag.is_set():
-            data = self.q.get()
+            # data = self.q.get()
+            
+            try:
+                data = self.q.get(timeout=0.2)
+            except queue.Empty:
+                continue
 
             if self.rec.AcceptWaveform(data):
                 # FINAL result
@@ -114,10 +120,19 @@ class CommandListener:
                     print(f"[voice] FINAL: '{text}'")
                 if not text:
                     continue
+
                 for p in PHRASES:
                     if text == p and self._should_emit(p):
                         yield p
                         break
+                else:
+                    # Not one of the fixed phrases.
+                    if text and text != "[unk]" and self._should_emit(text):
+                        yield text
+                    elif text == "[unk]":
+                        # Force the controller to switch to free-form capture
+                        yield "__FREEFORM__"
+                            
             else:
                 # PARTIAL result (fires often)
                 if not PARTIAL_ENABLE:
@@ -136,4 +151,44 @@ class CommandListener:
                 if partial == "stop" or partial.endswith(" stop"):
                     if self._should_emit("stop"):
                         yield "stop"
+
+    #function just added
+    def listen_freeform_once(self, seconds: float = 3.5):
+        """
+        Capture ~N seconds of free-form speech (no grammar) and return one text string.
+        Uses the same audio stream/queue; temporary recognizer without grammar.
+        """
+        import json as _json
+        if self.stream is None:
+            return None
+
+        # Use the current samplerate detected in start(); fall back if missing.
+        sr = getattr(self, "current_sr", self.sample_rate_fallback)
+        temp_rec = KaldiRecognizer(self.model, sr)
+
+        deadline = time.time() + seconds
+        final_text = ""
+
+        while time.time() < deadline:
+            try:
+                data = self.q.get(timeout=0.2)
+            except Exception:
+                continue
+            if temp_rec.AcceptWaveform(data):
+                try:
+                    res = _json.loads(temp_rec.Result())
+                    final_text = (res.get("text") or "").strip()
+                except Exception:
+                    pass
+
+        # flush any remainder
+        try:
+            res = _json.loads(temp_rec.FinalResult())
+            if not final_text:
+                final_text = (res.get("text") or "").strip()
+        except Exception:
+            pass
+
+        return final_text or None
+
 
