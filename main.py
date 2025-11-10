@@ -494,6 +494,13 @@ def build_parser():
     sub.add_parser("test-leds", help="Cycle RGB LEDs")
     sub.add_parser("servo-center", help="Center the servo")
 
+    #will allow for one liner when saving location on terminal
+    sp = sub.add_parser("save-place", help="Save current pose under a name")
+    sp.add_argument("--name", required=True, help="Place name (e.g., kitchen)")
+    sp.add_argument("--aliases", default="", help="Optional aliases, comma-separated")
+
+    sub.add_parser("list-places", help="List saved place names")
+
     return p
 
 def main():
@@ -506,6 +513,36 @@ def main():
     elif args.mode == "test-motors":     mode_test_motors()
     elif args.mode == "test-leds":       mode_test_leds()
     elif args.mode == "servo-center":    mode_servo_center()
+
+    elif args.mode == "save-place":
+        # get current pose (works with your perception.lidar/get_pose)
+        try:
+            from perception.lidar import get_pose
+            pose = get_pose()  # dict or (x,y,theta) depending on your impl
+        except Exception as e:
+            print(f"[save-place] Could not read pose: {e}")
+            return 1
+
+        from navigation.places import PlaceManager, Pose
+        pm = PlaceManager()
+        # normalize pose to Pose dataclass
+        if isinstance(pose, dict):
+            x, y, th = float(pose.get("x", 0.0)), float(pose.get("y", 0.0)), float(pose.get("theta", 0.0))
+        else:
+            x, y, th = float(pose[0]), float(pose[1]), float(pose[2])
+
+        name = args.name.strip().lower()
+        aliases = [a.strip().lower() for a in args.aliases.split(",") if a.strip()]
+        pm.add_place(name, Pose(x, y, th), aliases=aliases)
+        pm._save()
+        print(f"Saved '{name}' at (x={x:.3f}, y={y:.3f}, θ={th:.3f}) aliases={aliases}")
+
+    elif args.mode == "list-places":
+        from navigation.places import PlaceManager
+        pm = PlaceManager()
+        names = pm.list_places()
+        print("Places:", ", ".join(names) if names else "(none)")
+
 
 if __name__ == "__main__":
     main()

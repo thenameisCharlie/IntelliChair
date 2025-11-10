@@ -67,41 +67,85 @@ class PlaceManager:
             print(f"[places] Error clearing places file: {e}")
 
     #change to add_place
+    # def add_place(self, name: str, pose: Pose, aliases: Optional[List[str]] = None):
+    #     """Add or overwrite a named place with optional aliases."""
+    #     if aliases is None:
+    #         aliases = []
+
+    #     #canonical stored entry
+    #     entry = {
+    #         "x": float(pose.x),
+    #         "y": float(pose.y),
+    #         "theta": float(pose.theta),
+    #         "aliases": aliases
+    #     }
+
+    #     #store under main name
+    #     main_key = name.lower()
+    #     self.places[main_key] = entry
+
+    #     #store aliases mapping to the same entry data (but saved as separate keys)
+    #     for alias in aliases:
+    #         self.places[alias.lower()] = entry
+
+    #     self._save()
+    #     print(f"[places] Added place '{name}' @ ({pose.x:.2f}, {pose.y:.2f}, θ={pose.theta:.2f})")
+
     def add_place(self, name: str, pose: Pose, aliases: Optional[List[str]] = None):
-        """Add or overwrite a named place with optional aliases."""
+        """Add or overwrite a named place with optional aliases (single canonical key)."""
         if aliases is None:
             aliases = []
 
-        #canonical stored entry
         entry = {
             "x": float(pose.x),
             "y": float(pose.y),
             "theta": float(pose.theta),
-            "aliases": aliases
+            "aliases": [a.strip().lower() for a in aliases if a.strip()],
         }
 
-        #store under main name
-        main_key = name.lower()
+        # Store only under the main canonical key
+        main_key = name.strip().lower()
         self.places[main_key] = entry
 
-        #store aliases mapping to the same entry data (but saved as separate keys)
-        for alias in aliases:
-            self.places[alias.lower()] = entry
-
         self._save()
-        print(f"[places] Added place '{name}' @ ({pose.x:.2f}, {pose.y:.2f}, θ={pose.theta:.2f})")
+        print(f"[places] Added place '{name}' @ ({pose.x:.2f}, {pose.y:.2f}, θ={pose.theta:.2f}) "
+            f"aliases={entry['aliases']}")
 
+    # def get_place(self, name: str) -> Optional[Dict[str, Any]]:
+    #     """
+    #     Retrieve a place by name or alias.
+    #     """
+    #     if not name:
+    #         return None
+    #     return self.places.get(name.lower())
+    
     def get_place(self, name: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a place by name or alias.
+        Retrieve a place by exact name or any alias (case-insensitive).
         """
         if not name:
             return None
-        return self.places.get(name.lower())
+        key = name.strip().lower()
+
+        # Exact name match
+        if key in self.places:
+            return self.places[key]
+
+        # Alias match
+        for entry in self.places.values():
+            if key in [a.lower() for a in entry.get("aliases", [])]:
+                return entry
+        return None
     
+    # def list_places(self) -> List[str]:
+    #     """List all known place names."""
+    #     return list(self.places.keys())
+
     def list_places(self) -> List[str]:
-        """List all known place names."""
-        return list(self.places.keys())
+        """
+        List canonical place names only (not alias strings as top-level keys).
+        """
+        return sorted(self.places.keys())
 
 
 #Removed PathPlanner (Frank)

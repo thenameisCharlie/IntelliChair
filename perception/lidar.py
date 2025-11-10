@@ -15,7 +15,17 @@ PORT = '/dev/ttyUSB0' #lidar's serial port
 #port name on linux/macos = /dev/ttyUSB0
 #port name on windows = COM3 or COM4
 
+POSE_PATH = "/tmp/ic_pose.json"
+
 BAUDRATE = 115200
+
+def _write_pose_file(x, y, theta, path=POSE_PATH):
+    try:
+        import json, time
+        with open(path, "w") as f:
+            json.dump({"x": x, "y": y, "theta": theta, "ts": time.time()}, f)
+    except Exception:
+        pass
 
 def update_pose(x, y, theta):
     """Update the estimated robot pose."""
@@ -50,6 +60,7 @@ def lidar_thread(port=PORT, baudrate=BAUDRATE):
             theta = total_rotation
 
             update_pose(x, y, theta)
+            _write_pose_file(x, y, theta) 
             time.sleep(0.05)
 
     except RPLidarException as e:
