@@ -55,6 +55,10 @@ Examples:
 """
 
 import sys, time, argparse
+import subprocess
+from pathlib import Path
+
+POSE_FILE = Path("/tmp/ic_pose.json")
 
 # ---------- Imports with graceful fallbacks ----------
 def _load_modules():
@@ -106,6 +110,7 @@ def _load_modules():
         PC["get_scan"] = get_scan
     except Exception:
         pass
+
 
     # navigation (teleop defines main(), not run())
     NV = {}
@@ -206,6 +211,47 @@ def _delegate_to_teleop():
     sys.argv = [sys.argv[0]] + sys.argv[2:]
     return NV["teleop_main"]()
 
+# def _start_lidar_subprocess():
+#     """Launch the LiDAR pose writer (perception.lidar) as a child process."""
+#     try:
+#         proc = subprocess.Popen(
+#             ["python3", "-m", "perception.lidar"],
+#             stdout=subprocess.DEVNULL,
+#             stderr=subprocess.STDOUT,
+#         )
+#         # Wait briefly until the pose file shows up so saves won't be zeros
+#         for _ in range(50):  # ~5s total
+#             if POSE_FILE.exists():
+#                 break
+#             time.sleep(0.1)
+#         return proc
+#     except Exception as e:
+#         print(f"[teach] LiDAR start error: {e}")
+#         return None
+
+def _start_lidar_subprocess():
+    """Launch LiDAR writer; warn if it can't update the pose file."""
+    try:
+        before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
+        proc = subprocess.Popen(
+            ["python3", "-m", "perception.lidar"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
+        # wait up to ~5s for file creation/update
+        for _ in range(50):
+            time.sleep(0.1)
+            if POSE_FILE.exists():
+                after = POSE_FILE.stat().st_mtime
+                if after > before:
+                    return proc
+        print("[teach] LiDAR pose file did not update. If you're not in the 'dialout' group yet, run "
+              "'sudo -E python3 main.py teach' or reboot so dialout membership takes effect.")
+        return proc  # still return so we can terminate later
+    except Exception as e:
+        print(f"[teach] LiDAR start error: {e}")
+        return None
+
 # ---------- Modes ----------
 def mode_autonomy():
     """
@@ -243,7 +289,9 @@ def mode_autonomy():
 
     # --- helpers ---
     import time as _time
+
     recent_stops = []  # timestamps of recent stops
+    
 
     def sample_cm() -> float:
         """Median-of-N with sanitization; returns cm; 999 if unknown."""
@@ -345,7 +393,7 @@ def mode_autonomy():
             if DEBUG:
                 state = 'BLOCK' if d <= STOP_CM else ('SLOW' if d <= STOP_CM + SLOW_BAND else 'CLEAR')
                 print(f"[auto] d={d:.1f}cm  stop<={STOP_CM:.1f}  slow<={STOP_CM+SLOW_BAND:.1f}  "
-                      f"state={state}  clears={clear_hits}")
+                    f"state={state}  clears={clear_hits}")
 
             # main logic
             if d <= STOP_CM:
@@ -401,6 +449,9 @@ def mode_teach(switch_to_auto: bool):
     red, green, blue, yellow, magenta, cyan, off = leds_safe()
     slam_handle = None
 
+    # NEW: start the LiDAR pose producer here so save-place sees fresh poses
+    lidar_proc = _start_lidar_subprocess()
+
     if "start_slam" in PC:
         try:
             print("[teach] starting SLAM (manual mapping)…")
@@ -421,7 +472,14 @@ def mode_teach(switch_to_auto: bool):
                 print("[teach] map saved.")
             except Exception as e:
                 print(f"[teach] save_map error: {e}")
-        # Do not let LEDs crash if GPIO got cleaned by other modules
+
+        # NEW: shut down LiDAR subprocess cleanly
+        if lidar_proc:
+            try:
+                lidar_proc.terminate()
+            except Exception:
+                pass
+
         try:
             off()
         except Exception:

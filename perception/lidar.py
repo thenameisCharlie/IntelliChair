@@ -6,6 +6,7 @@ import json
 import os
 import threading
 from rplidar import RPLidar, RPLidarException
+from pathlib import Path      
 
 #current robot pose stored here and accessed via get_pose/update_pose()
 _pose_lock = threading.Lock()
@@ -15,27 +16,53 @@ PORT = '/dev/ttyUSB0' #lidar's serial port
 #port name on linux/macos = /dev/ttyUSB0
 #port name on windows = COM3 or COM4
 
-POSE_PATH = "/tmp/ic_pose.json"
+POSE_PATH = Path("/tmp/ic_pose.json")  
 
 BAUDRATE = 115200
 
-def _write_pose_file(x, y, theta, path=POSE_PATH):
+def _write_pose_file(x: float, y: float, th: float) -> None:
+    """Atomically write the latest pose so other processes can read it."""
+    import json, os, tempfile
     try:
-        import json, time
-        with open(path, "w") as f:
-            json.dump({"x": x, "y": y, "theta": theta, "ts": time.time()}, f)
+        d = {"x": float(x), "y": float(y), "theta": float(th)}
+        fd, tmp = tempfile.mkstemp(prefix="ic_pose_", dir="/tmp")
+        with os.fdopen(fd, "w") as f:
+            json.dump(d, f)
+        os.replace(tmp, POSE_PATH)  # atomic rename
+    except Exception:
+        pass  # never crash the LiDAR thread
+
+def _write_pose_json(x: float, y: float, theta: float) -> None:
+    try:
+        tmp = POSE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"x": float(x), "y": float(y), "theta": float(theta)}))
+        tmp.replace(POSE_PATH)
+        os.chmod(POSE_PATH, 0o644)
     except Exception:
         pass
 
 def update_pose(x, y, theta):
-    """Update the estimated robot pose."""
+    """Update in-memory pose and publish to the shared file."""
     with _pose_lock:
-        _current_pose[0] = x
-        _current_pose[1] = y
-        _current_pose[2] = theta
+        _current_pose[:] = [float(x), float(y), float(theta)]
+    _write_pose_json(x, y, theta)           # single place that writes
+
+# def get_pose():
+#     """Return the most recent pose estimate (x, y, theta)."""
+#     with _pose_lock:
+#         return tuple(_current_pose)
 
 def get_pose():
     """Return the most recent pose estimate (x, y, theta)."""
+    try:
+        if POSE_PATH.exists():
+            data = json.loads(POSE_PATH.read_text())
+            return (float(data.get("x", 0.0)),
+                    float(data.get("y", 0.0)),
+                    float(data.get("theta", 0.0)))
+    except Exception:
+        # file may be mid-write; ignore and fall back
+        pass
     with _pose_lock:
         return tuple(_current_pose)
 
@@ -59,8 +86,7 @@ def lidar_thread(port=PORT, baudrate=BAUDRATE):
             y = avg_dist * math.sin(total_rotation) / 2000.0
             theta = total_rotation
 
-            update_pose(x, y, theta)
-            _write_pose_file(x, y, theta) 
+            update_pose(x, y, theta)   # this now writes the file via _write_pose_json
             time.sleep(0.05)
 
     except RPLidarException as e:
