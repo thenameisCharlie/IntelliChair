@@ -24,8 +24,8 @@ def run():
     navigating = False
     last_cmd_time = 0.0
     DEBOUNCE_SEC = 0.5
-    awaiting_until = 0.0             # NEW: suppress keywords while we wait for an answer
-    CLARIFY_COOLDOWN = 4.0           # NEW: ignore keyword hits for this long
+    awaiting_until = 0.0             # suppress keywords while we wait for an answer
+    CLARIFY_COOLDOWN = 4.0           # ignore keyword hits for this long
 
     def is_busy():
         nonlocal nav_thread
@@ -57,11 +57,11 @@ def run():
     # Makes the prompts visually appealing
     def _say(msg: str):
         # Mute mic while speaking to avoid hearing our own TTS
-        listener.pause()                 # NEW
+        listener.pause()                 
         speak(msg)
         print(f"🗣  {msg}")
         time.sleep(0.20)                 # tiny settle
-        listener.resume()                # NEW
+        listener.resume()               
 
     def _choices_to_english(choices):
         if not choices: 
@@ -81,6 +81,11 @@ def run():
         if intent.get("choices"):
             lines.append("  choices : " + ", ".join(intent["choices"]))
         print("\n".join(lines))
+    
+    def _pretty_cmd(cmd: str) -> str:
+        if cmd == "__FREEFORM__":
+            return "Listening for your answer"
+        return cmd
         
     # def _known_rooms():
     #     try:
@@ -125,7 +130,7 @@ def run():
 
                 last_cmd_time = now
 
-                print(f"[voice] recognized: {cmd}")
+                print(f"[voice] recognized: {_pretty_cmd(cmd)}")
 
                 # EMERGENCY STOP (always available)
                 if cmd == "stop":

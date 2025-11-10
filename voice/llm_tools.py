@@ -2,6 +2,7 @@
 from typing import TypedDict, Literal, Optional, List, Dict
 import os, json, difflib
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
@@ -82,6 +83,18 @@ def parse_command(text: str, known_rooms: List[str]) -> Intent:
     room_lc = _local_rules(t, rooms_lc)
     if room_lc:
         return {"action": "go", "target": rooms_map[room_lc], "reason": "local rule / direct mention"}
+    
+    # NEW: explicit "<something> room" that isn't saved → say it's unknown
+    m = re.search(r"\b([a-z ]+)\sroom\b", t)   # e.g., "living room", "kids room"
+    if m:
+        cand = (m.group(1).strip() + " room").strip()
+        if cand not in rooms_lc:
+            return {
+                "action":"ask",
+                "question": f"I don't have '{cand}' saved. Which room should I use?",
+                "choices": known_rooms,
+                "reason": "unknown room",
+            }
 
     # vague “room” but not which one
     if "room" in t and not any(r in t for r in rooms_lc):
