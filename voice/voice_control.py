@@ -24,6 +24,8 @@ def run():
     navigating = False
     last_cmd_time = 0.0
     DEBOUNCE_SEC = 0.5
+    awaiting_until = 0.0             # NEW: suppress keywords while we wait for an answer
+    CLARIFY_COOLDOWN = 4.0           # NEW: ignore keyword hits for this long
 
     def is_busy():
         nonlocal nav_thread
@@ -51,6 +53,34 @@ def run():
             return sorted(list(data.keys()))
         except Exception:
             return []
+        
+    # Makes the prompts visually appealing
+    def _say(msg: str):
+        # Mute mic while speaking to avoid hearing our own TTS
+        listener.pause()                 # NEW
+        speak(msg)
+        print(f"🗣  {msg}")
+        time.sleep(0.20)                 # tiny settle
+        listener.resume()                # NEW
+
+    def _choices_to_english(choices):
+        if not choices: 
+            return ""
+        return choices[0] if len(choices)==1 else ", ".join(choices[:-1]) + f", or {choices[-1]}"
+
+    def _log_ai(utter, intent):
+        lines = [
+            "🤖 AI decision:",
+            f"  heard   : {utter!r}",
+            f"  action  : {intent.get('action')}",
+            f"  target  : {intent.get('target')}",
+            f"  reason  : {intent.get('reason','')}",
+        ]
+        if intent.get("question"):
+            lines.append(f"  question: {intent['question']}")
+        if intent.get("choices"):
+            lines.append("  choices : " + ", ".join(intent["choices"]))
+        print("\n".join(lines))
         
     # def _known_rooms():
     #     try:
@@ -85,8 +115,14 @@ def run():
         while True:
             for cmd in listener.listen():
                 now = time.time()
+                
                 if now - last_cmd_time < DEBOUNCE_SEC:
                     continue
+
+                # If we're in a clarification window, ignore keyword emissions
+                if now < awaiting_until:
+                    continue
+
                 last_cmd_time = now
 
                 print(f"[voice] recognized: {cmd}")
@@ -97,91 +133,110 @@ def run():
                         nav.emergency_stop()
                     except Exception:
                         pass
-                    speak("Stopped.")
-                    # if a nav thread is running, let it unwind
+                    _say("Stopping now.")
                     continue
 
                 # STATUS
                 if cmd == "status":
                     room = nav.current_room()
-                    speak(f"I am in the {room}. Battery OK.")
+                    _say(f"I'm in the {room}. Battery OK.")
                     continue
 
                 # GO TO KITCHEN (accept synonym 'kitchen')
                 if cmd in ("go to kitchen", "kitchen"):
                     if is_busy():
-                        speak("Already navigating. Say stop to halt.")
+                        _say("Already navigating. Say 'stop' to halt.")
                         continue
-                    speak("Going to the kitchen.")
+                    _say("Heading to the kitchen.")
                     start_nav("kitchen")
                     continue
 
-                # # Unknown (shouldn't happen with fixed grammar, but safe)
-                # print(f"[voice] Unhandled command: {cmd}")
                 
                 # Unknown with fixed grammar → switch to free-form AI mode
-                print(f"[voice] Unhandled fixed command: {cmd}")
-                from voice.tts import speak as _speak
-                # Use the transcript we already have; if it's too short, ask once.
-                # Use what we got, unless it was an unknown token or too short
-                utter = None if cmd in ("[unk]", "__FREEFORM__", "<unk>", "unk") else cmd
+                # print(f"[voice] Unhandled fixed command: {cmd}")
 
-                if not utter or len(utter.split()) < 2:
-                    _speak("Tell me what you need.")
-                    utter = listener.listen_freeform_once(seconds=4.0)
+                
+                # -------- Unknown / AI-handled path --------
+                utter = (cmd or "").strip()
+
+                # Case 1: listener told us there was speech but FINAL was empty,
+                # or user said a dangling "go to" → prompt for room and capture free-form.
+                # if cmd == "__FREEFORM__" or cmd == "go to":
+                #     _say("Which room would you like to go to?")
+                #     awaiting_until = time.time() + CLARIFY_COOLDOWN
+                #     time.sleep(0.80)
+                #     utter = listener.listen_freeform_once(seconds=8.0)
+                #     awaiting_until = 0.0
+                #     if not utter:
+                #         _say("Sorry, I didn't catch that.")
+                #         continue
+
+                if cmd == "__FREEFORM__" or cmd == "go to":
+                    _say("Which room would you like to go to?")
+                    awaiting_until = time.time() + CLARIFY_COOLDOWN
+
+                    # ↓ NEW: clear any TTS echo / old audio and give a short arm window
+                    listener.flush_queue()
+                    time.sleep(0.25)
+
+                    utter = listener.listen_freeform_once(seconds=8.0)
+                    awaiting_until = 0.0
                     if not utter:
-                        _speak("I did not catch that.")
+                        _say("Sorry, I didn't catch that.")
                         continue
 
+                # Case 2: otherwise, treat whatever we heard as the utterance and let AI parse it
                 rooms = _known_rooms()
-
                 if not rooms:
-                    _speak("I don't have any saved rooms yet. Please save places first.")
+                    _say("I don't have any saved rooms yet. Please save places first.")
                     continue
 
                 intent = parse_command(utter, rooms)
-                print(f"[ai] utter='{utter}' -> intent={intent}")
+                _log_ai(utter, intent)
 
                 if intent["action"] == "stop":
-                    try:
-                        nav.emergency_stop()
-                    except Exception:
-                        pass
-                    _speak("Stopped.")
+                    try: nav.emergency_stop()
+                    except Exception: pass
+                    _say("Stopping now.")
                     continue
 
                 if intent["action"] == "status":
                     room = nav.current_room()
-                    _speak(f"I am in the {room}.")
+                    _say(f"I'm in the {room}.")
                     continue
 
                 if intent["action"] == "ask":
-                    choice = _disambiguate(intent.get("choices") or rooms)
+                    choices = intent.get("choices") or rooms
+                    prompt  = intent.get("question") or "Which room would you like?"
+                    _say(f"{prompt} {_choices_to_english(choices)}.")
+                    awaiting_until = time.time() + CLARIFY_COOLDOWN
+                    time.sleep(0.80)
+                    choice = _disambiguate(choices)
+                    awaiting_until = 0.0
                     if not choice:
-                        _speak("Sorry, I still did not understand.")
+                        _say("Sorry, I didn't catch that.")
                         continue
                     if is_busy():
-                        _speak("Already navigating. Say stop to halt.")
+                        _say("Already navigating. Say 'stop' to halt.")
                         continue
-                    _speak(f"Heading to the {choice}.")
+                    _say(f"Okay—going to the {choice}.")
                     start_nav(choice)
                     continue
 
                 if intent["action"] == "go":
                     target = intent.get("target")
                     if not target:
-                        target = _disambiguate(rooms)
-                        if not target:
-                            _speak("Sorry, I did not understand.")
-                            continue
-                    if is_busy():
-                        _speak("Already navigating. Say stop to halt.")
+                        _say("Sorry, I didn't understand.")
                         continue
-                    _speak(f"On my way to the {target}.")
+                    if is_busy():
+                        _say("Already navigating. Say 'stop' to halt.")
+                        continue
+                    _say(f"On my way to the {target}. If you need to stop, say 'stop'.")
                     start_nav(target)
                     continue
 
-                _speak("Sorry, I didn't understand.")
+                # Fallback
+                _say("Sorry, I didn't understand.")
                 continue
 
 

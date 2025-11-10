@@ -68,6 +68,10 @@ _SYSTEM = (
 def parse_command(text: str, known_rooms: List[str]) -> Intent:
     t = text.lower().strip()
 
+    # Normalize room names for case-insensitive matching
+    rooms_map = {r.lower(): r for r in known_rooms}  # lc -> original
+    rooms_lc = list(rooms_map.keys())
+
     # fast safety/status
     if any(w in t.split() for w in ["stop","halt","abort"]):
         return {"action":"stop","target":None,"reason":"safety word"}
@@ -75,14 +79,24 @@ def parse_command(text: str, known_rooms: List[str]) -> Intent:
         return {"action":"status","target":None,"reason":"status word"}
 
     # offline rules & direct mentions
-    room = _local_rules(t, known_rooms)
-    if room:
-        return {"action":"go","target":room,"reason":"local rule / direct mention"}
+    room_lc = _local_rules(t, rooms_lc)
+    if room_lc:
+        return {"action": "go", "target": rooms_map[room_lc], "reason": "local rule / direct mention"}
 
     # vague “room” but not which one
-    if "room" in t and not any(r in t for r in known_rooms):
+    if "room" in t and not any(r in t for r in rooms_lc):
         return {"action":"ask","question":"Which room do you want to go to?",
                 "choices": known_rooms, "reason":"ambiguous: room unspecified"}
+    
+    # NEW If user said "go …" but no known room was mentioned, ask directly (skip LLM)
+    if (t.startswith(("go to", "go the", "go", "take me to", "bring me to"))
+        and not any(r in t for r in rooms_lc)):
+        return {
+            "action": "ask",
+            "question": "Which room do you want to go to?",
+            "choices": known_rooms,
+            "reason": "ambiguous: 'go …' without room",
+        }
 
     # LLM fallback (optional)
     client = get_client()
@@ -100,7 +114,7 @@ def parse_command(text: str, known_rooms: List[str]) -> Intent:
                    {"role":"user","content":user}],
             response_format={"type":"json_object"},
             temperature=0.2,
-            timeout=8
+            # timeout=8
         )
         data = json.loads(resp.output[0].content[0].text)
         action = data.get("action","none")
@@ -112,10 +126,38 @@ def parse_command(text: str, known_rooms: List[str]) -> Intent:
         if action not in {"go","stop","status","ask","none"}:
             return {"action":"none","target":None,"reason":"invalid action"}
 
+        target_lc = (target or "").lower()
+
         if action == "go":
-            if target not in known_rooms:
-                target = _closest(target or "", known_rooms)
-            return {"action":"go","target":target,"reason":reason}
+            # No target extracted at all → ask which room
+            if not target_lc:
+                return {
+                    "action": "ask",
+                    "question": "Which room do you want to go to?",
+                    "choices": known_rooms,
+                    "reason": "no target in utterance",
+                }
+
+            # Target not saved → ask, with a suggested guess if any
+            if target_lc not in rooms_lc:
+                guess_lc = _closest(target_lc, rooms_lc)
+                if guess_lc:
+                    guess = rooms_map[guess_lc]
+                    return {
+                        "action": "ask",
+                        "question": f"I don't have '{target}' saved. Did you mean {guess}?",
+                        "choices": [guess] + [r for r in known_rooms if r != guess],
+                        "reason": "unknown room",
+                    }
+                return {
+                    "action": "ask",
+                    "question": f"I don't have '{target}' saved. Which room should I use?",
+                    "choices": known_rooms,
+                    "reason": "unknown room",
+                }
+
+            # Valid target → return original-cased room name
+            return {"action": "go", "target": rooms_map[target_lc], "reason": reason}
 
         if action == "ask":
             if isinstance(choices, list):
