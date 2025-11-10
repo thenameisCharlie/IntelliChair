@@ -388,11 +388,6 @@ def mode_autonomy():
                 print(f"[autonomy] save_map error: {e}")
         off()
 
-
-
-
-
-
 def mode_teleop():
     rc = _delegate_to_teleop()
     if rc is None: rc = 0
