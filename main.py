@@ -211,46 +211,60 @@ def _delegate_to_teleop():
     sys.argv = [sys.argv[0]] + sys.argv[2:]
     return NV["teleop_main"]()
 
+def _start_lidar_subprocess():
+    """Launch LiDAR writer; try root first; verify pose file updates."""
+    before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
+
+    # If not root, prefer sudo -E so serial opens and env is preserved
+    cmd = ["python3", "-m", "perception.lidar"]
+    try:
+        import os
+        if os.geteuid() != 0:
+            cmd = ["sudo", "-E"] + cmd
+    except Exception:
+        pass
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
+        # wait up to ~5s for pose file to appear/update
+        for _ in range(50):
+            time.sleep(0.1)
+            if POSE_FILE.exists() and POSE_FILE.stat().st_mtime > before:
+                return proc
+
+        print("[teach] LiDAR pose file did not update within 5s. "
+              "Try running 'sudo -E python3 main.py teach' or check LiDAR power/USB.")
+        return proc  # still return so we can terminate later
+    except Exception as e:
+        print(f"[teach] LiDAR start error: {e}")
+        return None
+
 # def _start_lidar_subprocess():
-#     """Launch the LiDAR pose writer (perception.lidar) as a child process."""
+#     """Launch LiDAR writer; warn if it can't update the pose file."""
 #     try:
+#         before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
 #         proc = subprocess.Popen(
 #             ["python3", "-m", "perception.lidar"],
 #             stdout=subprocess.DEVNULL,
 #             stderr=subprocess.STDOUT,
 #         )
-#         # Wait briefly until the pose file shows up so saves won't be zeros
-#         for _ in range(50):  # ~5s total
-#             if POSE_FILE.exists():
-#                 break
+#         # wait up to ~5s for file creation/update
+#         for _ in range(50):
 #             time.sleep(0.1)
-#         return proc
+#             if POSE_FILE.exists():
+#                 after = POSE_FILE.stat().st_mtime
+#                 if after > before:
+#                     return proc
+#         print("[teach] LiDAR pose file did not update. If you're not in the 'dialout' group yet, run "
+#               "'sudo -E python3 main.py teach' or reboot so dialout membership takes effect.")
+#         return proc  # still return so we can terminate later
 #     except Exception as e:
 #         print(f"[teach] LiDAR start error: {e}")
 #         return None
-
-def _start_lidar_subprocess():
-    """Launch LiDAR writer; warn if it can't update the pose file."""
-    try:
-        before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
-        proc = subprocess.Popen(
-            ["python3", "-m", "perception.lidar"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-        )
-        # wait up to ~5s for file creation/update
-        for _ in range(50):
-            time.sleep(0.1)
-            if POSE_FILE.exists():
-                after = POSE_FILE.stat().st_mtime
-                if after > before:
-                    return proc
-        print("[teach] LiDAR pose file did not update. If you're not in the 'dialout' group yet, run "
-              "'sudo -E python3 main.py teach' or reboot so dialout membership takes effect.")
-        return proc  # still return so we can terminate later
-    except Exception as e:
-        print(f"[teach] LiDAR start error: {e}")
-        return None
 
 # ---------- Modes ----------
 def mode_autonomy():
