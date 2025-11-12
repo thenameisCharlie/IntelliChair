@@ -108,7 +108,8 @@ def main():
         pass
     
     node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
     print("[main] Shutdown complete.")
 
 
