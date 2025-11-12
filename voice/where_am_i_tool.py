@@ -26,6 +26,7 @@ def lidar_thread(): #to read the scans continuously and update locaton
     try:
         lidar = RPLidar(PORT, BAUDRATE)
         print("[lidar] Connected and scanning...")
+        time.sleep(2.0) #allows the lidar to stabilize
         total_rotation = 0.0 
 
         #read scans in a loop
