@@ -4,15 +4,16 @@
     "y": 0.008523772938167482,
     "theta": 0.02,
     "aliases": [
-      "cooking area"
+      "cooking area",
+      "kitchenette"
     ]
   },
-  "cooking area": {
-    "x": 0.42613182024005786,
-    "y": 0.008523772938167482,
-    "theta": 0.02,
+  "living room": {
+    "x": -0.15852539772983928,
+    "y": 0.6229046393751289,
+    "theta": 1.8200000000000014,
     "aliases": [
-      "cooking area"
+      "cozy area"
     ]
   }
 }
