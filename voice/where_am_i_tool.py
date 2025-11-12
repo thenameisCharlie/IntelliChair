@@ -1,118 +1,101 @@
 from __future__ import annotations
+import math, json
+from pathlib import Path
+
 import rclpy
-from rclpy.node import Node 
+from rclpy.node import Node
 from std_srvs.srv import Trigger
-import threading, math, time
-from rplidar import RPLidar, RPLidarException
-#from pathlib import Path
-#import subprocess
 
-PORT = '/dev/ttyUSB0' #port for lidar sensor 
-BAUDRATE = 115200 #baud rate
+#try importing the SLAM pose function
+try:
+    from perception.slam import _get_current_pose_from_lidar
+except Exception:
+    _get_current_pose_from_lidar = None
 
-_pose_lock = threading.Lock()
-_current_pose = [0.0, 0.0, 0.0]  #saving robot's location in a variable
+# file that lidar/slam writes the last known pose to
+POSE_PATH = Path("/tmp/ic_pose.json")
 
-def update_pose(x, y, theta): #to update the robot's 
-    with _pose_lock:
-        _current_pose[0], _current_pose[1], _current_pose[2] = x, y, theta
-
-def get_pose(): #recent robot's location
-    with _pose_lock:
-        return tuple(_current_pose)
-
-
-def lidar_thread(): #to read the scans continuously and update locaton
-    try:
-        lidar = RPLidar(PORT, BAUDRATE)
-        print("[lidar] Connected and scanning...")
-        time.sleep(2.0) #allows the lidar to stabilize
-        total_rotation = 0.0 
-
-        #read scans in a loop
-        for scan in lidar.iter_scans():
-            if not scan:
-                continue
-
-            distances = [d for q, a, d in scan if d > 0]
-            avg_dist = sum(distances) / len(distances) if distances else 0.0
-
-            #sample movement pattern
-            total_rotation += 0.01
-            x = avg_dist * math.cos(total_rotation) / 2000.0
-            y = avg_dist * math.sin(total_rotation) / 2000.0
-            theta = total_rotation
-
-            #saves location
-            update_pose(x,y,theta)
-            time.sleep(0.05)
-
-    
-    except (RPLidarException, Exception) as e:
-        print(f"[lidar] Error: {e}")
-
-    finally: #stop and disconnect
-        try:
-            lidar.stop()
-            lidar.disconnect()
-        except Exception:
-            pass
-        print("[lidar] Stopped.")
-
-
-#boundaries for the rooms
-def coordinates_to_room(x, y):
+#ROOM LOGIC
+def coordinates_to_room(x: float, y: float) -> str:
+    """Determine which room the robot is in based on coordinate ranges."""
     if -1 < x < 2 and -1 < y < 3:
         return "Living Room"
-    
     elif 3 < x < 6 and -1 < y < 2:
         return "Kitchen"
-
     elif -2 < x < 1 and 4 < y < 7:
         return "Bedroom"
-
     else:
         return "Unknown area"
 
-#ros2 node
+
+#POSE HELPERS
+def get_pose_with_fallback() -> tuple[float, float, float]:
+    """Try SLAM pose first; fall back to /tmp/ic_pose.json."""
+    # 1st Try the live SLAM function if available
+    if _get_current_pose_from_lidar is not None:
+        try:
+            x, y, theta = _get_current_pose_from_lidar()
+            # If valid numeric values
+            if any(abs(v) > 1e-6 for v in (x, y, theta)):
+                return x, y, theta
+        except Exception:
+            pass
+
+    # 2️nd Fallback: read JSON file if it exists
+    try:
+        if POSE_PATH.exists():
+            data = json.loads(POSE_PATH.read_text())
+            return (
+                float(data.get("x", 0.0)),
+                float(data.get("y", 0.0)),
+                float(data.get("theta", 0.0)),
+            )
+    except Exception:
+        pass
+
+    # 3rd Final fallback
+    return 0.0, 0.0, 0.0
+
+
+#ROS2 NODE
 class WhereAmINode(Node):
+    """ROS2 node exposing a Trigger service called 'where_am_i'."""
+
     def __init__(self):
-        #trigger service called where am i created
-        super().__init__('Where_am_i_node')
+        super().__init__('where_am_i_node')
         self.create_service(Trigger, 'where_am_i', self.handle_where_am_i)
-        self.get_logger().info("where_am_i service ready.")
+        self.get_logger().info(" where_am_i service ready (with fallback).")
 
     def handle_where_am_i(self, request, response):
-        #handles requests
-        x, y, theta = get_pose()
+        x, y, theta = get_pose_with_fallback()
         room = coordinates_to_room(x, y)
+
         response.success = True
-        response.message = (f"You are in the {room} at "
-            f"({x:.2f}, {y:.2f}), facing {math.degrees(theta):.1f}°")
+        response.message = (
+            f"You are in the {room} at "
+            f"({x:.2f}, {y:.2f}), facing {math.degrees(theta):.1f}°."
+        )
+
+        self.get_logger().info(response.message)
         return response
 
 
-#main 
+#MAIN
 def main():
-    #start lidar thread and spin ros2 node
-    t = threading.Thread(target = lidar_thread, daemon = True)
-    t.start()
-
-    #start ros2 node
     rclpy.init()
     node = WhereAmINode()
 
-    try: 
+    try:
         rclpy.spin(node)
-    
     except KeyboardInterrupt:
         pass
-    
-    node.destroy_node()
-    if rclpy.ok():
-        rclpy.shutdown()
-    print("[main] Shutdown complete.")
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+        print("[main] Shutdown complete.")
 
 
 if __name__ == "__main__":
     main()
+
