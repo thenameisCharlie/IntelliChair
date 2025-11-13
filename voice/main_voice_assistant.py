@@ -5,6 +5,7 @@
 from llm_tools import parse_command
 from std_srvs.srv import Trigger
 import rclpy
+import warnings
 import pyttsx3
 import time
 import speech_recognition as sr   # mic new import
@@ -32,11 +33,17 @@ def get_location_status():
 
 #SPEECH OUTPUT
 def speak(text: str):
-    """Speak text aloud."""
+    """Speak text aloud safely without espeak callback errors."""
     engine = pyttsx3.init()
-    engine.say(text)
-    engine.runAndWait()
-
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Suppress espeak callback warnings
+            engine.say(text)
+            engine.runAndWait()
+    except Exception as e:
+        print(f"[TTS error] {e}")
+    finally:
+        engine.stop()
 
 #SPEECH INPUT
 def listen():
