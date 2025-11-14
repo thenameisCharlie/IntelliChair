@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 test_voice.py – Unified IntelliChair system test
-Combines LiDAR scanning, SLAM mapping, /where_am_i ROS2 service, and
-a simple voice/keyboard assistant for testing.
+Combines LiDAR scanning, SLAM mapping, /where_am_i ROS2 service,
+and a simple voice/keyboard assistant for testing.
 """
 
 import os
@@ -20,18 +20,19 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 import pyttsx3
 
+
 # -------------------------------
-# Constants
+# CONSTANTS
 # -------------------------------
 POSE_PATH = Path("/tmp/ic_pose.json")
 PORT = "/dev/ttyUSB0"
-BAUDRATE = 256000  # ⚠️ Adjusted for Yahboom/CP210x models
+BAUDRATE = 256000        # ✅ Recommended for Yahboom/CP210x RPLIDARs
 
 _pose_lock = threading.Lock()
 _current_pose = [0.0, 0.0, 0.0]
 
 # -------------------------------
-# Diagnostics
+# STARTUP LOGS
 # -------------------------------
 print("🔍 Starting IntelliChair unified system test...")
 print(f"Working directory: {os.getcwd()}")
@@ -44,22 +45,25 @@ except Exception as e:
     print(f"❌ Failed to import rclpy: {e}")
     sys.exit(1)
 
+
 # -------------------------------
-# Speech
+# SPEECH OUTPUT
 # -------------------------------
 def speak(text: str):
+    """Speak aloud using pyttsx3."""
     try:
         engine = pyttsx3.init()
         engine.say(text)
         engine.runAndWait()
     except Exception as e:
-        print(f"[tts] Warning: speech failed ({e})")
+        print(f"[tts] Warning: speech output failed ({e})")
+
 
 # -------------------------------
-# Pose utilities
+# POSE UTILITIES
 # -------------------------------
 def update_pose(x, y, theta):
-    """Update pose in memory and save to JSON."""
+    """Update the in-memory and on-disk pose."""
     with _pose_lock:
         _current_pose[:] = [float(x), float(y), float(theta)]
     try:
@@ -69,19 +73,25 @@ def update_pose(x, y, theta):
     except Exception:
         pass
 
+
 def get_pose():
-    """Return the most recent pose estimate (x, y, theta)."""
+    """Return (x, y, theta) from JSON or memory."""
     try:
         if POSE_PATH.exists():
-            d = json.loads(POSE_PATH.read_text())
-            return (d.get("x", 0.0), d.get("y", 0.0), d.get("theta", 0.0))
+            data = json.loads(POSE_PATH.read_text())
+            return (
+                data.get("x", 0.0),
+                data.get("y", 0.0),
+                data.get("theta", 0.0),
+            )
     except Exception:
         pass
     with _pose_lock:
         return tuple(_current_pose)
 
+
 # -------------------------------
-# LiDAR Thread (auto-restart)
+# LIDAR THREAD (auto-restart)
 # -------------------------------
 def lidar_thread(port=PORT, baudrate=BAUDRATE):
     """Continuously read LiDAR scans and update pose."""
@@ -111,11 +121,12 @@ def lidar_thread(port=PORT, baudrate=BAUDRATE):
                 lidar.disconnect()
             except Exception:
                 pass
-            print("[lidar] 🔄 Reconnecting...")
             time.sleep(3)
+            print("[lidar] 🔄 Reconnecting...")
+
 
 # -------------------------------
-# SLAM (background)
+# SLAM LAUNCHER
 # -------------------------------
 def start_slam():
     """Launch slam_toolbox asynchronously."""
@@ -124,17 +135,18 @@ def start_slam():
             ["ros2", "launch", "slam_toolbox", "online_async_launch.py"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            preexec_fn=os.setpgrp
+            preexec_fn=os.setpgrp,
         )
         print("[slam] ✅ slam_toolbox launched.")
     except Exception as e:
         print(f"[slam] ⚠️ Could not launch SLAM: {e}")
 
+
 # -------------------------------
-# Where Am I ROS2 Node
+# WHERE-AM-I NODE
 # -------------------------------
 def coordinates_to_room(x, y):
-    """Rough room boundaries for demo."""
+    """Demo room mapping."""
     if -1 < x < 2 and -1 < y < 3:
         return "Living Room"
     elif 3 < x < 6 and -1 < y < 2:
@@ -143,6 +155,7 @@ def coordinates_to_room(x, y):
         return "Bedroom"
     else:
         return "Unknown Area"
+
 
 class WhereAmINode(Node):
     def __init__(self):
@@ -154,12 +167,15 @@ class WhereAmINode(Node):
         x, y, th = get_pose()
         room = coordinates_to_room(x, y)
         response.success = True
-        response.message = f"You are in the {room} at ({x:.2f}, {y:.2f}), facing {math.degrees(th)%360:.1f}°."
+        response.message = (
+            f"You are in the {room} at ({x:.2f}, {y:.2f}), facing {math.degrees(th)%360:.1f}°."
+        )
         print(f"[where_am_i] → {response.message}")
         return response
 
+
 # -------------------------------
-# Command Parser
+# COMMAND PARSER
 # -------------------------------
 def parse_command(text):
     t = text.lower()
@@ -171,38 +187,46 @@ def parse_command(text):
         return {"action": "stop"}
     return {"action": "unknown"}
 
+
 # -------------------------------
-# Main System Loop
+# MAIN LOOP
 # -------------------------------
 def main():
-    # Start LiDAR & SLAM threads
+    # Launch LiDAR + SLAM
     threading.Thread(target=lidar_thread, daemon=True).start()
     threading.Thread(target=start_slam, daemon=True).start()
 
-    # Init ROS2
+    # Init ROS2 node
     rclpy.init()
     node = WhereAmINode()
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
 
-    # Diagnostic: check service
+    # --- SYSTEM SELF-CHECK ---
     print("\n🧠 System checks:")
     time.sleep(2)
     client = node.create_client(Trigger, "where_am_i")
     if client.wait_for_service(timeout_sec=5.0):
         print("✅ /where_am_i service available.")
-        # 🔎 Automatic first check
-        future = client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(node, future)
-        if future.result():
-            msg = future.result().message
-            print(f"[auto-test] {msg}")
-        else:
-            print("[auto-test] ❌ No response from service.")
+
+        # ✅ FIXED: use temporary node to avoid generator error
+        temp_node = rclpy.create_node("where_am_i_client_autotest")
+        temp_client = temp_node.create_client(Trigger, "where_am_i")
+        if temp_client.wait_for_service(timeout_sec=3.0):
+            req = Trigger.Request()
+            future = temp_client.call_async(req)
+            rclpy.spin_until_future_complete(temp_node, future)
+            if future.result():
+                msg = future.result().message
+                print(f"[auto-test] {msg}")
+            else:
+                print("[auto-test] ❌ No response from service.")
+        temp_node.destroy_node()
     else:
-        print("❌ /where_am_i service not available (check LiDAR or ROS2).")
+        print("❌ /where_am_i service not available (check LiDAR / ROS2).")
 
     print("🎙️ Voice Assistant ready. Type commands like 'where am I', 'status', or 'stop'.\n")
 
+    # --- USER LOOP ---
     try:
         while True:
             text = input("You: ").strip()
@@ -215,7 +239,8 @@ def main():
                 if not client.wait_for_service(timeout_sec=3.0):
                     print("⚠️ /where_am_i not available.")
                     continue
-                future = client.call_async(Trigger.Request())
+                req = Trigger.Request()
+                future = client.call_async(req)
                 rclpy.spin_until_future_complete(node, future)
                 if future.result():
                     msg = future.result().message
@@ -225,15 +250,15 @@ def main():
                     print("Robot: Could not get location.")
                     speak("I could not get location.")
 
+            elif intent["action"] == "status":
+                x, y, th = get_pose()
+                msg = f"System active. Pose=({x:.2f}, {y:.2f}), heading {math.degrees(th)%360:.1f}°."
+                print("Robot:", msg)
+                speak(msg)
+
             elif intent["action"] == "stop":
                 print("Robot: Stopping for safety.")
                 speak("Stopping for safety.")
-
-            elif intent["action"] == "status":
-                x, y, th = get_pose()
-                msg = f"System active. Current pose ({x:.2f}, {y:.2f}), heading {math.degrees(th)%360:.1f}°."
-                print("Robot:", msg)
-                speak(msg)
 
             else:
                 print("Robot: I didn’t understand that.")
@@ -245,15 +270,10 @@ def main():
             rclpy.shutdown()
         print("[main] Shutdown complete.")
 
+
 # -------------------------------
-# Entry Point
+# ENTRY POINT
 # -------------------------------
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
 
