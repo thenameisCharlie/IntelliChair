@@ -54,14 +54,14 @@ if client.wait_for_service(timeout_sec=5.0):
 else:
     print("⚠️ /where_am_i not available.")
 
-# -------------------------------------------------------
-# STEP 4: START MAIN VOICE ASSISTANT
-# -------------------------------------------------------
-print("\n🎙️ Launching voice assistant...")
-try:
-    main_voice_assistant.main()
-except KeyboardInterrupt:
-    print("\n🛑 Shutting down IntelliChair...")
+#  -------------------------------------------------------
+#  STEP 4: START MAIN VOICE ASSISTANT
+#  -------------------------------------------------------
+# print("\n🎙️ Launching voice assistant...")
+# try:
+#     main_voice_assistant.main()
+# except KeyboardInterrupt:
+#     print("\n🛑 Shutting down IntelliChair...")
 
 # -------------------------------------------------------
 # STEP 5: CLEAN SHUTDOWN
@@ -71,6 +71,7 @@ if rclpy.ok():
     rclpy.shutdown()
 
 print("[main] ✅ IntelliChair system shutdown complete.")
+
 
 
 
