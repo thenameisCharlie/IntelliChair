@@ -159,6 +159,7 @@ def voice_assistant():
     rclpy.shutdown()
 
 
+
 #  MAIN
 
 def main():
@@ -168,20 +169,66 @@ def main():
     # Optionally start SLAM
     threading.Thread(target=start_slam, daemon=True).start()
 
-    # Start ROS2 service node in its own thread
+    # Initialize ROS2 once
     rclpy.init()
     node = WhereAmINode()
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
 
-    # Give system a moment to settle
-    time.sleep(3)
-    voice_assistant()
+    # Wait briefly for the service
+    time.sleep(2)
+    print("🎙️ Voice Assistant Ready. Type a command (e.g., 'where am I' or 'status').")
 
-    node.destroy_node()
-    if rclpy.ok():
+    known_rooms = ["Living Room", "Kitchen", "Bedroom"]
+
+    try:
+        while True:
+            text = input("\nYou: ").strip()
+            if text.lower() in {"exit", "quit"}:
+                print("Exiting assistant.")
+                break
+
+            intent = parse_command(text, known_rooms)
+            action = intent.get("action")
+
+            if action == "status":
+                print("[voice] 🔄 Checking ROS2 /where_am_i service...")
+                client = node.create_client(Trigger, "where_am_i")
+                if not client.wait_for_service(timeout_sec=3.0):
+                    print("⚠️ Service '/where_am_i' not available.")
+                    continue
+                req = Trigger.Request()
+                future = client.call_async(req)
+                rclpy.spin_until_future_complete(node, future)
+                if future.result():
+                    print(f"Robot: {future.result().message}")
+                else:
+                    print("Robot: Could not get location.")
+
+            elif action == "stop":
+                print("Robot: Stopping immediately for safety.")
+                speak("Stopping immediately for safety.")
+
+            elif action == "ask":
+                q = intent.get("question", "Can you clarify?")
+                choices = intent.get("choices", [])
+                print(f"Robot: {q}")
+                if choices:
+                    print(f"Options: {', '.join(choices)}")
+                speak(q)
+
+            elif action == "go":
+                target = intent.get("target", "unknown")
+                reply = f"Okay, going to the {target}."
+                print(f"Robot: {reply}")
+                speak(reply)
+
+            else:
+                print("Robot: I didn’t understand that.")
+                speak("I didn’t understand that.")
+    finally:
+        node.destroy_node()
         rclpy.shutdown()
-    print("[main] Shutdown complete.")
+        print("[main] Shutdown complete.")
 
-if __name__ == "__main__":
-    main()
+
 
