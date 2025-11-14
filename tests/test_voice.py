@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-
-Full IntelliChair integration test.
-Runs LiDAR, SLAM, the where_am_i service, and the main voice assistant.
-
-
 import os
 import sys
 import threading
@@ -73,10 +67,4 @@ if rclpy.ok():
     rclpy.shutdown()
 
 print("[main] ✅ IntelliChair system shutdown complete.")
-
-
-
-
-
-
 
