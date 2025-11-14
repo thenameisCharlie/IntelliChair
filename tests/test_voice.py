@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
-"""
-tests/test_intellichair.py
-Integration test using the REAL IntelliChair modules.
-Runs LiDAR, SLAM, the where_am_i tool, and the main voice assistant.
+# #!/usr/bin/env python3
+
+Full IntelliChair integration test.
+Runs LiDAR, SLAM, the where_am_i service, and the main voice assistant.
 """
 
 import os
@@ -17,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from perception import lidar, slam
 from voice import where_am_i_tool, main_voice_assistant
 
-print("🔍 Starting IntelliChair FULL integration test (real modules)...")
+print("🔍 Starting IntelliChair FULL integration test (voice enabled)...")
 
 # -------------------------------------------------------
 # STEP 1: START LIDAR & SLAM
@@ -54,23 +53,27 @@ if client.wait_for_service(timeout_sec=5.0):
 else:
     print("⚠️ /where_am_i not available.")
 
-#  -------------------------------------------------------
-#  STEP 4: START MAIN VOICE ASSISTANT
-#  -------------------------------------------------------
-# print("\n🎙️ Launching voice assistant...")
-# try:
-#     main_voice_assistant.main()
-# except KeyboardInterrupt:
-#     print("\n🛑 Shutting down IntelliChair...")
+# -------------------------------------------------------
+# STEP 4: START MAIN VOICE ASSISTANT (with delay)
+# -------------------------------------------------------
+print("\n⏳ Waiting 5 seconds for LiDAR & SLAM stabilization...")
+time.sleep(5)
+print("🎙️ Launching voice assistant...")
+try:
+    main_voice_assistant.main()
+except KeyboardInterrupt:
+    print("\n🛑 Shutting down IntelliChair...")
 
 # -------------------------------------------------------
 # STEP 5: CLEAN SHUTDOWN
 # -------------------------------------------------------
+print("\n🧹 Cleaning up ROS2 nodes and SLAM...")
 where_node.destroy_node()
 if rclpy.ok():
     rclpy.shutdown()
 
 print("[main] ✅ IntelliChair system shutdown complete.")
+
 
 
 
