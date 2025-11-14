@@ -1,70 +1,87 @@
+#!/usr/bin/env python3
+"""
+tests/test_full_intellichair.py
+Full integration test: LiDAR + SLAM + where_am_i service + Voice Assistant (mic).
+"""
+
 import os
 import sys
-import threading
 import time
+import threading
+import signal
+import subprocess
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from std_srvs.srv import Trigger
 
-# --- Import your real project modules ---
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from perception import lidar, slam
-from voice import where_am_i_tool, main_voice_assistant
+# Add root to path
+repo_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
 
-print("🔍 Starting IntelliChair FULL integration test (voice enabled)...")
+from perception.lidar import lidar_thread
+from perception.slam import start_slam
+from voice.where_am_i_tool import WhereAmINode
+from voice.main_voice_assistant import main as voice_main
 
-# -------------------------------------------------------
-# STEP 1: START LIDAR & SLAM
-# -------------------------------------------------------
-lidar_thread = threading.Thread(target=lidar.lidar_thread, daemon=True)
-lidar_thread.start()
-print("✅ LiDAR thread started.")
+def main():
+    print("🔍 Starting full IntelliChair integration test...")
 
-slam_proc = slam.start_slam()
-print("✅ SLAM process launched.")
+    # Start LiDAR thread
+    lidar_t = threading.Thread(target=lidar_thread, daemon=True)
+    lidar_t.start()
+    print("✅ LiDAR thread started.")
 
-# -------------------------------------------------------
-# STEP 2: START THE WHERE-AM-I ROS2 NODE
-# -------------------------------------------------------
-rclpy.init()
-where_node = where_am_i_tool.WhereAmINode()
-threading.Thread(target=rclpy.spin, args=(where_node,), daemon=True).start()
-print("✅ where_am_i ROS2 service node running.")
+    # Start SLAM
+    slam_proc = start_slam()
+    print("✅ SLAM process launched.")
 
-# -------------------------------------------------------
-# STEP 3: TEST THE SERVICE ONCE
-# -------------------------------------------------------
-time.sleep(3)
-client = where_node.create_client(Trigger, "where_am_i")
-if client.wait_for_service(timeout_sec=5.0):
-    req = Trigger.Request()
-    future = client.call_async(req)
-    while rclpy.ok() and not future.done():
-        time.sleep(0.05)
-    if future.result():
-        print(f"[auto-test] → {future.result().message}")
+    # Init ROS2 and start where_am_i node
+    rclpy.init()
+    where_node = WhereAmINode()
+    executor = SingleThreadedExecutor()
+    executor.add_node(where_node)
+    executor_thread = threading.Thread(target=executor.spin, daemon=True)
+    executor_thread.start()
+    print("✅ where_am_i service node running.")
+
+    # Wait for service availability
+    time.sleep(3)
+    client = where_node.create_client(Trigger, "where_am_i")
+    if client.wait_for_service(timeout_sec=5.0):
+        future = client.call_async(Trigger.Request())
+        rclpy.spin_until_future_complete(where_node, future)
+        res = future.result()
+        if res:
+            print(f"[auto-test] → {res.message}")
+        else:
+            print("[auto-test] ❌ No response from /where_am_i")
     else:
-        print("[auto-test] ❌ No response from /where_am_i")
-else:
-    print("⚠️ /where_am_i not available.")
+        print("⚠️ /where_am_i service not available.")
 
-# -------------------------------------------------------
-# STEP 4: START MAIN VOICE ASSISTANT (with delay)
-# -------------------------------------------------------
-print("\n⏳ Waiting 5 seconds for LiDAR & SLAM stabilization...")
-time.sleep(5)
-print("🎙️ Launching voice assistant...")
-try:
-    main_voice_assistant.main()
-except KeyboardInterrupt:
-    print("\n🛑 Shutting down IntelliChair...")
+    # Wait to allow LiDAR/SLAM data to stabilize
+    print("⏳ Waiting 5 seconds for LiDAR & SLAM to stabilize...")
+    time.sleep(5)
 
-# -------------------------------------------------------
-# STEP 5: CLEAN SHUTDOWN
-# -------------------------------------------------------
-print("\n🧹 Cleaning up ROS2 nodes and SLAM...")
-where_node.destroy_node()
-if rclpy.ok():
-    rclpy.shutdown()
+    # Launch voice assistant (mic mode)
+    print("🎙️ Launching voice assistant (mic mode)...")
+    try:
+        voice_main()
+    except KeyboardInterrupt:
+        print("\n🛑 Voice Assistant interrupted.")
 
-print("[main] ✅ IntelliChair system shutdown complete.")
+    # Clean shutdown
+    print("🧹 Shutting down nodes and SLAM...")
+    executor.shutdown()
+    where_node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+    try:
+        slam_proc.terminate()
+    except Exception:
+        pass
+    print("[main] ✅ Integration test complete.")
+
+if __name__ == "__main__":
+    main()
 
