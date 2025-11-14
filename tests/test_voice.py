@@ -27,7 +27,7 @@ import pyttsx3
 # -------------------------------
 POSE_PATH = Path("/tmp/ic_pose.json")
 PORT = "/dev/ttyUSB0"
-BAUDRATE = 115200  # ✅ Yahboom/CP210x default
+BAUDRATE = 256000  # ✅ Yahboom/CP210x default
 
 _pose_lock = threading.Lock()
 _current_pose = [0.0, 0.0, 0.0]
@@ -281,6 +281,7 @@ def main():
 # -------------------------------
 if __name__ == "__main__":
     main()
+
 
 
 
