@@ -17,6 +17,7 @@ from rplidar import RPLidar, RPLidarException
 
 import rclpy
 from rclpy.node import Node
+from rclpy.task import Future
 from std_srvs.srv import Trigger
 import pyttsx3
 
@@ -26,7 +27,7 @@ import pyttsx3
 # -------------------------------
 POSE_PATH = Path("/tmp/ic_pose.json")
 PORT = "/dev/ttyUSB0"
-BAUDRATE = 256000        # ✅ Recommended for Yahboom/CP210x RPLIDARs
+BAUDRATE = 256000  # ✅ Yahboom/CP210x default
 
 _pose_lock = threading.Lock()
 _current_pose = [0.0, 0.0, 0.0]
@@ -208,14 +209,18 @@ def main():
     if client.wait_for_service(timeout_sec=5.0):
         print("✅ /where_am_i service available.")
 
-        # ✅ FIXED: use temporary node to avoid generator error
+        # ✅ SAFE AUTO-TEST (no spin conflict)
         temp_node = rclpy.create_node("where_am_i_client_autotest")
         temp_client = temp_node.create_client(Trigger, "where_am_i")
         if temp_client.wait_for_service(timeout_sec=3.0):
             req = Trigger.Request()
             future = temp_client.call_async(req)
-            rclpy.spin_until_future_complete(temp_node, future)
-            if future.result():
+
+            # Wait manually without spinning another executor
+            while rclpy.ok() and not future.done():
+                time.sleep(0.05)
+
+            if isinstance(future, Future) and future.done() and future.result() is not None:
                 msg = future.result().message
                 print(f"[auto-test] {msg}")
             else:
@@ -276,4 +281,6 @@ def main():
 # -------------------------------
 if __name__ == "__main__":
     main()
+
+
 
