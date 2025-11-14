@@ -37,7 +37,7 @@ def main():
     print("✅ SLAM process launched.")
 
     # Init ROS2 and start where_am_i node
-    rclpy.init()
+    #rclpy.init()
     where_node = WhereAmINode()
     executor = SingleThreadedExecutor()
     executor.add_node(where_node)
@@ -84,4 +84,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
