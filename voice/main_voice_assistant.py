@@ -2,7 +2,7 @@
 # connects the LLM tool (for understanding user speech)
 # with ROS2 where_am_i service (for robot location reporting).
 
-from llm_tools import parse_command
+from voice.llm_tools import parse_command
 from std_srvs.srv import Trigger
 import rclpy
 import warnings
