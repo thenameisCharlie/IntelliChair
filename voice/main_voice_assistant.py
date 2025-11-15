@@ -10,28 +10,50 @@ import pyttsx3
 import time
 import speech_recognition as sr   # mic new import
 
-#ROS2 SERVICE CALLER
+
+# -----------------------------------------------------------
+# ROS2 SERVICE CALLER
+# -----------------------------------------------------------
 def get_location_status():
-    """Call your ROS2 /where_am_i service."""
-    #rclpy.init()
+    """Call your ROS2 /where_am_i service.
+
+    - If rclpy is NOT initialized yet, this function will init + shutdown it.
+    - If rclpy IS already running (like in tests.test_voice), it will
+      NOT shut it down and will play nice with the existing context.
+    """
+    created_context = False
+
+    # If ROS2 is not started yet, start it just for this call
+    if not rclpy.ok():
+        rclpy.init()
+        created_context = True
+
     node = rclpy.create_node("where_am_i_client")
     client = node.create_client(Trigger, "where_am_i")
 
     if not client.wait_for_service(timeout_sec=3.0):
         node.get_logger().error("Service not available.")
-        rclpy.shutdown()
+        node.destroy_node()
+        if created_context and rclpy.ok():
+            rclpy.shutdown()
         return {"error": "service not available"}
 
     req = Trigger.Request()
     future = client.call_async(req)
     rclpy.spin_until_future_complete(node, future)
     result = future.result()
+
     node.destroy_node()
-    rclpy.shutdown()
+    # Only shut down if WE created the context here
+    if created_context and rclpy.ok():
+        rclpy.shutdown()
+
     return {"message": result.message}
 
 
-#SPEECH OUTPUT
+# -----------------------------------------------------------
+# SPEECH OUTPUT
+# -----------------------------------------------------------
 def speak(text: str):
     """Speak text aloud safely without espeak callback errors."""
     engine = pyttsx3.init()
@@ -45,7 +67,10 @@ def speak(text: str):
     finally:
         engine.stop()
 
-#SPEECH INPUT
+
+# -----------------------------------------------------------
+# SPEECH INPUT
+# -----------------------------------------------------------
 def listen():
     """Listen to the user's voice and return recognized text."""
     recognizer = sr.Recognizer()
@@ -67,13 +92,15 @@ def listen():
         return ""
 
 
-# --- MAIN LOOP ---
+# -----------------------------------------------------------
+# MAIN LOOP
+# -----------------------------------------------------------
 def main():
     known_rooms = ["Living Room", "Kitchen", "Bedroom"]
     print("Voice Assistant Ready. Say a command (e.g., 'Where am I?').")
 
     while True:
-        #Get voice input
+        # Get voice input
         user_text = listen().strip()
         if not user_text:
             continue
@@ -128,3 +155,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
