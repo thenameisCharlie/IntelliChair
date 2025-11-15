@@ -37,13 +37,23 @@ def main():
     print("✅ SLAM process launched.")
 
     # Init ROS2 and start where_am_i node
+    # Init ROS2 and start where_am_i node
     rclpy.init()
     where_node = WhereAmINode()
     executor = SingleThreadedExecutor()
     executor.add_node(where_node)
-    executor_thread = threading.Thread(target=executor.spin, daemon=True)
+
+    def spin_executor():
+        # Swallow KeyboardInterrupt so Ctrl+C doesn’t print a traceback
+        try:
+            executor.spin()
+        except KeyboardInterrupt:
+            pass
+
+    executor_thread = threading.Thread(target=spin_executor, daemon=True)
     executor_thread.start()
     print("✅ where_am_i service node running.")
+
 
     # Wait for service availability
     time.sleep(3)
@@ -73,6 +83,7 @@ def main():
     # Clean shutdown
     print("🧹 Shutting down nodes and SLAM...")
     executor.shutdown()
+    executor_thread.join(timeout=1.0)
     where_node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
@@ -84,6 +95,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
