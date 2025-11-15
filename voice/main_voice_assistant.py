@@ -13,7 +13,7 @@ import speech_recognition as sr   # mic new import
 #ROS2 SERVICE CALLER
 def get_location_status():
     """Call your ROS2 /where_am_i service."""
-    rclpy.init()
+    #rclpy.init()
     node = rclpy.create_node("where_am_i_client")
     client = node.create_client(Trigger, "where_am_i")
 
