@@ -5,7 +5,7 @@ IntelliChair is a prototype smart wheelchair built on the Yahboom G1 Tank platfo
 ## IntelliChair Demo
 https://youtu.be/4aEpP2LoGZE
 
-##Features
+## Features
 - Ultrasonic Backup Detection: An HC-SR04 sensor that provides secondary close-range obstacle detection in case LiDAR data is not available or unreliable.
 - LiDAR-Based Obstacle Avoidance: Primary obstacle detection and mapping will rely on LiDAR to create real-time awareness of the environment.
 - Voice Command Interface: Users will be able to give spoken instructions (e.g., “Take me to the kitchen”).
