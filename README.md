@@ -58,7 +58,8 @@ Edit config.py to adjust:
 - Libraries: RPi.GPIO, time
 - (Future) LiDAR + speech libraries
 
-
+## IntelliChair Demo
+https://youtu.be/4aEpP2LoGZE
 
 
 
