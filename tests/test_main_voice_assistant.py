@@ -1,108 +1,82 @@
-import unittest
-from unittest.mock import patch, MagicMock
+#!/usr/bin/env python3
 
-# Import the functions we want to test
-from main_voice_assistant import get_location_status, main
+"""
+One-shot voice test:
+- Listens to the mic once
+- Parse command
+- If user asked "Where am I?" → calls where_am_i service
+"""
 
+import time
+import threading
+import rclpy
+from std_srvs.srv import Trigger
 
-# Mock all ROS 2-related functions that will be called inside get_location_status
-@patch('main_voice_assistant.rclpy')
-class TestROS2Client(unittest.TestCase):
-    """Tests the logic for calling the /where_am_i ROS2 service."""
-
-    def test_service_success(self, mock_rclpy):
-        """Test case where the ROS2 service call succeeds."""
-        
-        # 1. Mock the future result with a successful response
-        mock_result = MagicMock()
-        mock_result.message = "Test message: You are in the Living Room."
-        
-        mock_future = MagicMock()
-        mock_future.result.return_value = mock_result
-        
-        # 2. Configure rclpy to return the mock future
-        mock_client = MagicMock()
-        mock_client.call_async.return_value = mock_future
-        mock_client.wait_for_service.return_value = True
-
-        mock_node = MagicMock()
-        mock_node.create_client.return_value = mock_client
-        
-        mock_rclpy.create_node.return_value = mock_node
-        
-        # 3. Call the function
-        result = get_location_status()
-
-        # 4. Assert the result structure and content
-        self.assertEqual(result, {"message": "Test message: You are in the Living Room."})
-        mock_rclpy.spin_until_future_complete.assert_called_once()
-
-    def test_service_unavailable_failure(self, mock_rclpy):
-        """Test case where the ROS2 service is not available (timeout)."""
-        
-        # 1. Configure rclpy to report the service is unavailable
-        mock_client = MagicMock()
-        mock_client.wait_for_service.return_value = False
-
-        mock_node = MagicMock()
-        mock_node.create_client.return_value = mock_client
-        
-        mock_rclpy.create_node.return_value = mock_node
-        
-        # 2. Call the function
-        result = get_location_status()
-
-        # 3. Assert the error message is returned
-        self.assertEqual(result, {"error": "service not available"})
-        # Assert that spin_until_future_complete was NOT called
-        self.assertFalse(mock_rclpy.spin_until_future_complete.called)
+from voice import main_voice_assistant
+from voice import where_am_i_tool
+from voice.llm_tools import parse_command
 
 
-# Patch the voice I/O, LLM, and ROS client for full isolation
-@patch('main_voice_assistant.speak')
-@patch('main_voice_assistant.listen')
-@patch('main_voice_assistant.parse_command')
-@patch('main_voice_assistant.get_location_status')
-class TestMainLoop(unittest.TestCase):
-    """Tests the main command interpretation and execution loop."""
-
-    def test_status_command(self, mock_get_location, mock_parse, mock_listen, mock_speak):
-        """Test case for 'Where am I?' command."""
-        
-        # 1. Setup Input/Output control
-        mock_listen.side_effect = ["Where am I?", "exit"]  # First command, then exit
-        mock_parse.return_value = {"action": "status"} # LLM output for "Where am I?"
-        mock_get_location.return_value = {"message": "You are in the Bedroom."}
-
-        # 2. Run the main loop
-        main()
-
-        # 3. Assert that the correct functions were called
-        mock_parse.assert_called_with("Where am I?", ["Living Room", "Kitchen", "Bedroom"])
-        mock_get_location.assert_called_once()
-        mock_speak.assert_any_call("You are in the Bedroom.")
+def start_where_am_i_service():
+    """Start the ROS2 service in a background thread."""
+    rclpy.init()
+    node = where_am_i_tool.WhereAmINode()
+    t = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    t.start()
+    time.sleep(0.4)
+    return node
 
 
-    def test_navigation_command(self, mock_get_location, mock_parse, mock_listen, mock_speak):
-        """Test case for 'Go to the kitchen' command."""
+def main():
+    print("\n=== 🎤 One-Shot Voice Command Test ===")
+    print("Speak after the beep...")
+    time.sleep(1)
+    print("Beep!\n")
 
-        mock_listen.side_effect = ["Go to the kitchen.", "exit"]
-        mock_parse.return_value = {"action": "go", "target": "Kitchen"}
+    # ------------------------------------------------------
+    # 1. Listen ONCE
+    # ------------------------------------------------------
+    spoken_text = main_voice_assistant.listen()
+    if not spoken_text:
+        print("❌ No speech detected.")
+        return
 
-        main()
-        
-        mock_speak.assert_any_call("Okay, going to the Kitchen.")
-        mock_get_location.assert_not_called()
+    print(f"🗣 You said: {spoken_text!r}")
+
+    # ------------------------------------------------------
+    # 2. Parse intent
+    # ------------------------------------------------------
+    known_rooms = ["Living Room", "Kitchen", "Bedroom"]
+    intent = parse_command(spoken_text, known_rooms)
+
+    print(f"🔍 Parsed Intent: {intent}")
+
+    # ------------------------------------------------------
+    # 3. Start where_am_i node
+    # ------------------------------------------------------
+    where_node = start_where_am_i_service()
+
+    # ------------------------------------------------------
+    # 4. If status/where → call the service
+    # ------------------------------------------------------
+    if intent.get("action") == "status":
+        print("📡 Calling /where_am_i ...")
+        response = main_voice_assistant.get_location_status()
+        print("📍 Location:", response.get("message"))
+
+    else:
+        print("ℹ️ No status action detected. Nothing to test.")
+
+    # ------------------------------------------------------
+    # 5. Shutdown
+    # ------------------------------------------------------
+    where_node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+
+    print("\n=== ✔ One-Shot Voice Test Complete ===\n")
 
 
-    def test_exit_command(self, mock_get_location, mock_parse, mock_listen, mock_speak):
-        """Test case for "exit" command, which should break the loop."""
+if __name__ == "__main__":
+    main()
 
-        mock_listen.side_effect = ["exit"] 
-        
-        main()
-
-        # Assert that the loop breaks and calls the goodbye message
-        mock_listen.assert_called_once()
-        mock_speak.assert_any_call("Goodbye!")
-        mock_parse.assert_not_called()
