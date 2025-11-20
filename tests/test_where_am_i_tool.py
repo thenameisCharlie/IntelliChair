@@ -1,10 +1,15 @@
 import unittest
 import json
-from pathlib import Path
 from unittest.mock import patch
 
-# Import the functions and constants we want to test
-from where_am_i_tool import coordinates_to_room, get_pose_with_fallback
+import sys
+from pathlib import Path
+
+# Add the parent directory (IntelliChair) to the system path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Now import the module which is located in the parent directory
+from where_am_i_tool import coordinates_to_room, get_pose_with_fallback, POSE_PATH
 
 # Set a temporary path for testing the JSON fallback
 TEST_POSE_PATH = Path("/tmp/ic_test_pose.json")
@@ -85,3 +90,4 @@ class TestPoseFallback(unittest.TestCase):
         # File is not created, SLAM is None 
         x, y, theta = get_pose_with_fallback()
         self.assertEqual((x, y, theta), (0.0, 0.0, 0.0))
+
