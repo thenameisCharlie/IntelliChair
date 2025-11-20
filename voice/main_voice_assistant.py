@@ -14,16 +14,47 @@ import speech_recognition as sr   # mic new import
 # -----------------------------------------------------------
 # ROS2 SERVICE CALLER
 # -----------------------------------------------------------
-def get_location_status():
-    """Call your ROS2 /where_am_i service.
+# def get_location_status():
+#     """Call your ROS2 /where_am_i service.
 
-    - If rclpy is NOT initialized yet, this function will init + shutdown it.
-    - If rclpy IS already running (like in tests.test_voice), it will
-      NOT shut it down and will play nice with the existing context.
-    """
+#     - If rclpy is NOT initialized yet, this function will init + shutdown it.
+#     - If rclpy IS already running (like in tests.test_voice), it will
+#       NOT shut it down and will play nice with the existing context.
+#     """
+#     created_context = False
+
+#     # If ROS2 is not started yet, start it just for this call
+#     if not rclpy.ok():
+#         rclpy.init()
+#         created_context = True
+
+#     node = rclpy.create_node("where_am_i_client")
+#     client = node.create_client(Trigger, "where_am_i")
+
+#     if not client.wait_for_service(timeout_sec=3.0):
+#         node.get_logger().error("Service not available.")
+#         node.destroy_node()
+#         if created_context and rclpy.ok():
+#             rclpy.shutdown()
+#         return {"error": "service not available"}
+
+#     req = Trigger.Request()
+#     future = client.call_async(req)
+#     rclpy.spin_until_future_complete(node, future)
+#     result = future.result()
+
+#     node.destroy_node()
+#     # Only shut down if WE created the context here
+#     if created_context and rclpy.ok():
+#         rclpy.shutdown()
+
+#     return {"message": result.message}
+
+def get_location_status():
+    """Call your ROS2 /where_am_i service safely."""
     created_context = False
 
-    # If ROS2 is not started yet, start it just for this call
+    # Start ROS2 context if none exists
     if not rclpy.ok():
         rclpy.init()
         created_context = True
@@ -40,15 +71,29 @@ def get_location_status():
 
     req = Trigger.Request()
     future = client.call_async(req)
-    rclpy.spin_until_future_complete(node, future)
-    result = future.result()
 
+    # -------------------------------------------------
+    # IMPORTANT
+    # If we CREATED the ROS2 context → we are allowed to spin.
+    # If ROS is already spinning elsewhere → DO NOT SPIN.
+    # -------------------------------------------------
+    if created_context:
+        # Safe to spin here
+        rclpy.spin_until_future_complete(node, future)
+    else:
+        # ROS2 is *already spinning* in another thread → use polling
+        while not future.done():
+            time.sleep(0.01)
+
+    result = future.result()
     node.destroy_node()
-    # Only shut down if WE created the context here
+
+    # Clean shutdown ONLY if we created the context
     if created_context and rclpy.ok():
         rclpy.shutdown()
 
     return {"message": result.message}
+
 
 
 # -----------------------------------------------------------
