@@ -1,5 +1,5 @@
-import pytest
-pytest.skip("Skipping Vosk recognizer test — requires microphone and cannot run under pytest", allow_module_level=True)
+# import pytest
+# pytest.skip("Skipping Vosk recognizer test — requires microphone and cannot run under pytest", allow_module_level=True)
 
 import os, json, queue, sounddevice as sd
 from vosk import Model, KaldiRecognizer
