@@ -55,6 +55,10 @@ Examples:
 """
 
 import sys, time, argparse
+import subprocess
+from pathlib import Path
+
+POSE_FILE = Path("/tmp/ic_pose.json")
 
 # ---------- Imports with graceful fallbacks ----------
 def _load_modules():
@@ -106,6 +110,7 @@ def _load_modules():
         PC["get_scan"] = get_scan
     except Exception:
         pass
+
 
     # navigation (teleop defines main(), not run())
     NV = {}
@@ -206,6 +211,61 @@ def _delegate_to_teleop():
     sys.argv = [sys.argv[0]] + sys.argv[2:]
     return NV["teleop_main"]()
 
+def _start_lidar_subprocess():
+    """Launch LiDAR writer; try root first; verify pose file updates."""
+    before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
+
+    # If not root, prefer sudo -E so serial opens and env is preserved
+    cmd = ["python3", "-m", "perception.lidar"]
+    try:
+        import os
+        if os.geteuid() != 0:
+            cmd = ["sudo", "-E"] + cmd
+    except Exception:
+        pass
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
+        # wait up to ~5s for pose file to appear/update
+        for _ in range(50):
+            time.sleep(0.1)
+            if POSE_FILE.exists() and POSE_FILE.stat().st_mtime > before:
+                return proc
+
+        print("[teach] LiDAR pose file did not update within 5s. "
+              "Try running 'sudo -E python3 main.py teach' or check LiDAR power/USB.")
+        return proc  # still return so we can terminate later
+    except Exception as e:
+        print(f"[teach] LiDAR start error: {e}")
+        return None
+
+# def _start_lidar_subprocess():
+#     """Launch LiDAR writer; warn if it can't update the pose file."""
+#     try:
+#         before = POSE_FILE.stat().st_mtime if POSE_FILE.exists() else 0.0
+#         proc = subprocess.Popen(
+#             ["python3", "-m", "perception.lidar"],
+#             stdout=subprocess.DEVNULL,
+#             stderr=subprocess.STDOUT,
+#         )
+#         # wait up to ~5s for file creation/update
+#         for _ in range(50):
+#             time.sleep(0.1)
+#             if POSE_FILE.exists():
+#                 after = POSE_FILE.stat().st_mtime
+#                 if after > before:
+#                     return proc
+#         print("[teach] LiDAR pose file did not update. If you're not in the 'dialout' group yet, run "
+#               "'sudo -E python3 main.py teach' or reboot so dialout membership takes effect.")
+#         return proc  # still return so we can terminate later
+#     except Exception as e:
+#         print(f"[teach] LiDAR start error: {e}")
+#         return None
+
 # ---------- Modes ----------
 def mode_autonomy():
     """
@@ -243,7 +303,9 @@ def mode_autonomy():
 
     # --- helpers ---
     import time as _time
+
     recent_stops = []  # timestamps of recent stops
+    
 
     def sample_cm() -> float:
         """Median-of-N with sanitization; returns cm; 999 if unknown."""
@@ -345,7 +407,7 @@ def mode_autonomy():
             if DEBUG:
                 state = 'BLOCK' if d <= STOP_CM else ('SLOW' if d <= STOP_CM + SLOW_BAND else 'CLEAR')
                 print(f"[auto] d={d:.1f}cm  stop<={STOP_CM:.1f}  slow<={STOP_CM+SLOW_BAND:.1f}  "
-                      f"state={state}  clears={clear_hits}")
+                    f"state={state}  clears={clear_hits}")
 
             # main logic
             if d <= STOP_CM:
@@ -388,11 +450,6 @@ def mode_autonomy():
                 print(f"[autonomy] save_map error: {e}")
         off()
 
-
-
-
-
-
 def mode_teleop():
     rc = _delegate_to_teleop()
     if rc is None: rc = 0
@@ -405,6 +462,9 @@ def mode_teach(switch_to_auto: bool):
     """
     red, green, blue, yellow, magenta, cyan, off = leds_safe()
     slam_handle = None
+
+    # NEW: start the LiDAR pose producer here so save-place sees fresh poses
+    lidar_proc = _start_lidar_subprocess()
 
     if "start_slam" in PC:
         try:
@@ -426,7 +486,14 @@ def mode_teach(switch_to_auto: bool):
                 print("[teach] map saved.")
             except Exception as e:
                 print(f"[teach] save_map error: {e}")
-        # Do not let LEDs crash if GPIO got cleaned by other modules
+
+        # NEW: shut down LiDAR subprocess cleanly
+        if lidar_proc:
+            try:
+                lidar_proc.terminate()
+            except Exception:
+                pass
+
         try:
             off()
         except Exception:
@@ -499,6 +566,13 @@ def build_parser():
     sub.add_parser("test-leds", help="Cycle RGB LEDs")
     sub.add_parser("servo-center", help="Center the servo")
 
+    #will allow for one liner when saving location on terminal
+    sp = sub.add_parser("save-place", help="Save current pose under a name")
+    sp.add_argument("--name", required=True, help="Place name (e.g., kitchen)")
+    sp.add_argument("--aliases", default="", help="Optional aliases, comma-separated")
+
+    sub.add_parser("list-places", help="List saved place names")
+
     return p
 
 def main():
@@ -511,6 +585,36 @@ def main():
     elif args.mode == "test-motors":     mode_test_motors()
     elif args.mode == "test-leds":       mode_test_leds()
     elif args.mode == "servo-center":    mode_servo_center()
+
+    elif args.mode == "save-place":
+        # get current pose (works with your perception.lidar/get_pose)
+        try:
+            from perception.lidar import get_pose
+            pose = get_pose()  # dict or (x,y,theta) depending on your impl
+        except Exception as e:
+            print(f"[save-place] Could not read pose: {e}")
+            return 1
+
+        from navigation.places import PlaceManager, Pose
+        pm = PlaceManager()
+        # normalize pose to Pose dataclass
+        if isinstance(pose, dict):
+            x, y, th = float(pose.get("x", 0.0)), float(pose.get("y", 0.0)), float(pose.get("theta", 0.0))
+        else:
+            x, y, th = float(pose[0]), float(pose[1]), float(pose[2])
+
+        name = args.name.strip().lower()
+        aliases = [a.strip().lower() for a in args.aliases.split(",") if a.strip()]
+        pm.add_place(name, Pose(x, y, th), aliases=aliases)
+        pm._save()
+        print(f"Saved '{name}' at (x={x:.3f}, y={y:.3f}, θ={th:.3f}) aliases={aliases}")
+
+    elif args.mode == "list-places":
+        from navigation.places import PlaceManager
+        pm = PlaceManager()
+        names = pm.list_places()
+        print("Places:", ", ".join(names) if names else "(none)")
+
 
 if __name__ == "__main__":
     main()

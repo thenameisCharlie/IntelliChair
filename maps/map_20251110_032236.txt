@@ -1,0 +1,1 @@
+[slam] ROS2 not available; wrote stub at Mon Nov 10 03:22:36 2025

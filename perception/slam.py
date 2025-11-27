@@ -17,13 +17,21 @@ from __future__ import annotations
 
 import os
 import time
+import json
 import subprocess
 import shutil
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
+try:
+    from perception.lidar import get_pose as _lidar_get_pose
+except Exception:
+    _lidar_get_pose = None
+
 # Directory where maps and stubs are saved
 MAPS_DIR = Path("maps")
+
+POSE_FILE = Path("/tmp/ic_pose.json")
 
 
 # -------------------- Utilities --------------------
@@ -162,25 +170,49 @@ def load_map(name: str) -> Path:
     return stem
 
 
-def _get_current_pose_from_lidar() -> Tuple[float, float, float]:
-    """
-    Stub: return (x, y, theta). Extend to read TF or your own pose provider.
-    """
-    # Replace with actual TF/pose graph query if available
-    return (0.0, 0.0, 0.0)
+# def _get_current_pose_from_lidar() -> Tuple[float, float, float]:
+#     """
+#     Stub: return (x, y, theta). Extend to read TF or your own pose provider.
+#     """
+#     # Replace with actual TF/pose graph query if available
+#     return (0.0, 0.0, 0.0)
 
-
-def teach_place(name: str, places_path: Path | str = "navigation/places.json") -> None:
+def _get_current_pose_from_lidar():
     """
-    Stub: capture current pose under a human-friendly name and store it.
-    Integrate with your navigation.Places class if you already have one.
+    Return (x, y, theta) from the running LiDAR pose thread.
     """
     try:
-        from navigation.places import Places  # your repo's Places class
-        pman = Places(places_path)
+        from perception.lidar import get_pose
+        return get_pose()  # thread-safe; returns latest pose
+    except Exception:
+        return (0.0, 0.0, 0.0)
+
+
+# def teach_place(name: str, places_path: Path | str = "navigation/places.json") -> None:
+#     """
+#     Stub: capture current pose under a human-friendly name and store it.
+#     Integrate with your navigation.Places class if you already have one.
+#     """
+#     try:
+#         from navigation.places import Places  # your repo's Places class
+#         pman = Places(places_path)
+#         x, y, th = _get_current_pose_from_lidar()
+#         pman.add_place(name, {"x": x, "y": y, "theta": th})
+#         pman.save()
+#         print(f"[slam] teach_place: '{name}' recorded at ({x:.2f}, {y:.2f}, {th:.2f})")
+#     except Exception as e:
+#         print(f"[slam] teach_place stub fallback ({e}); no place recorded.")
+
+def teach_place(name: str, places_path: Path | str = "navigation/places.json") -> None:
+    try:
+        # CHANGE import
+        from navigation.places import PlaceManager
+        pm = PlaceManager(str(places_path))
         x, y, th = _get_current_pose_from_lidar()
-        pman.add_place(name, {"x": x, "y": y, "theta": th})
-        pman.save()
-        print(f"[slam] teach_place: '{name}' recorded at ({x:.2f}, {y:.2f}, {th:.2f})")
+        # Build the small pose record your PlaceManager expects
+        from types import SimpleNamespace
+        pose = SimpleNamespace(x=x, y=y, theta=th)
+        pm.add_place(name, pose, aliases=[])
+        print(f"[slam] teach_place: '{name}' recorded at ({x:.3f}, {y:.3f}, {th:.3f})")
     except Exception as e:
         print(f"[slam] teach_place stub fallback ({e}); no place recorded.")

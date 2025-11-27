@@ -26,6 +26,7 @@ except Exception:
         def __getattr__(self, name):
             return lambda *a, **k: None
     plt = _NoPlot()
+    
 
 # Tunables / thresholds (with sane fallbacks)
 THRESH_CM     = float(TUNABLES.get("THRESH_CM", 40))        # arrival threshold (cm)
@@ -35,6 +36,8 @@ STOP_DIST_CM  = float(TUNABLES.get("STOP_DIST_CM", 15))     # emergency stop dis
 SPIN_SPEED    = int(TUNABLES.get("SPIN_SPEED", 50))         # spin speed for rotate
 LOOP_DT       = float(TUNABLES.get("LOOP_DT", 0.05))        # loop tick seconds
 TIME_PER_M    = float(TUNABLES.get("TIME_PER_M", 6.0))      # open-loop secs per meter (fallback)
+
+
 
 class SimplePlanner:
     def __init__(self):
@@ -146,6 +149,7 @@ class SimplePlanner:
                 self.motors.stop()
                 print("[planner] Open-loop motion complete (no pose available).")
                 return False
+
 
     # --- Pose source fallback ---
     def _get_current_pose(self) -> Pose:
