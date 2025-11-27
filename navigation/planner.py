@@ -15,6 +15,7 @@ from hardware.motors import YahboomMotors
 from hardware.ultrasonic import distance_filtered_cm
 from navigation.places import PlaceManager, Pose
 from utils.config import TUNABLES
+from voice.tts import speak   # <-- NEW: for "path blocked, stopping"
 
 # --- Safe plotting setup (optional, won't crash if matplotlib missing) ---
 try:
@@ -22,21 +23,21 @@ try:
     PLOT = True
 except Exception:
     PLOT = False
+
     class _NoPlot:
         def __getattr__(self, name):
             return lambda *a, **k: None
+
     plt = _NoPlot()
-    
 
 # Tunables / thresholds (with sane fallbacks)
-THRESH_CM     = float(TUNABLES.get("THRESH_CM", 40))        # arrival threshold (cm)
-CRUISE_SPEED  = int(TUNABLES.get("CRUISE_SPEED", 60))       # motor speed (0-100)
-SLOW_SPEED    = int(TUNABLES.get("SLOW_SPEED", 30))         # slower speed near goal
-STOP_DIST_CM  = float(TUNABLES.get("STOP_DIST_CM", 15))     # emergency stop distance
-SPIN_SPEED    = int(TUNABLES.get("SPIN_SPEED", 50))         # spin speed for rotate
-LOOP_DT       = float(TUNABLES.get("LOOP_DT", 0.05))        # loop tick seconds
-TIME_PER_M    = float(TUNABLES.get("TIME_PER_M", 6.0))      # open-loop secs per meter (fallback)
-
+THRESH_CM = float(TUNABLES.get("THRESH_CM", 40))       # arrival threshold (cm)
+CRUISE_SPEED = int(TUNABLES.get("CRUISE_SPEED", 60))   # motor speed (0-100)
+SLOW_SPEED = int(TUNABLES.get("SLOW_SPEED", 30))       # slower speed near goal
+STOP_DIST_CM = float(TUNABLES.get("STOP_DIST_CM", 15)) # emergency stop distance
+SPIN_SPEED = int(TUNABLES.get("SPIN_SPEED", 50))       # spin speed for rotate
+LOOP_DT = float(TUNABLES.get("LOOP_DT", 0.05))         # loop tick seconds
+TIME_PER_M = float(TUNABLES.get("TIME_PER_M", 6.0))    # open-loop secs per meter (fallback)
 
 
 class SimplePlanner:
@@ -92,7 +93,8 @@ class SimplePlanner:
             return None
         return None
 
-    def _forward_until(self, distance_m: float, heading: float, start_pose: Pose, goal_pose: Pose) -> bool:
+    def _forward_until(self, distance_m: float, heading: float,
+                       start_pose: Pose, goal_pose: Pose) -> bool:
         """
         Drive forward toward goal by distance_m (meters).
         Returns True only if real pose says we're within THRESH_CM of goal.
@@ -116,10 +118,14 @@ class SimplePlanner:
             d = distance_filtered_cm()
             if d is not None and d <= STOP_DIST_CM:
                 print(f"[planner] Obstacle at {d:.0f} cm → stopping.")
+                try:
+                    speak("Path blocked, stopping.")   # <-- NEW announcement
+                except Exception:
+                    pass
                 self.motors.stop()
                 return False
 
-            # Slow near goal only if we have pose feedback to judge nearness
+            # Choose speed
             speed = SLOW_SPEED if have_pose else CRUISE_SPEED
             try:
                 self.motors.forward(int(speed))
@@ -136,7 +142,7 @@ class SimplePlanner:
                 pnow = self._read_pose()
                 if pnow is not None:
                     remaining_m = self._distance_to_goal(pnow, goal_pose)
-                    # Optional: print every ~0.5s to avoid spam
+                    # Throttle prints to avoid spam
                     if int((time.time() - start_time) * 10) % 5 == 0:
                         print(f"[planner] Remaining {remaining_m:.2f} m (pose-based)")
                     if remaining_m <= (THRESH_CM / 100.0):
@@ -149,7 +155,6 @@ class SimplePlanner:
                 self.motors.stop()
                 print("[planner] Open-loop motion complete (no pose available).")
                 return False
-
 
     # --- Pose source fallback ---
     def _get_current_pose(self) -> Pose:
