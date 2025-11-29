@@ -2,7 +2,16 @@
 ## Description
 IntelliChair is a prototype smart wheelchair built on the Yahboom G1 Tank platform.It uses a Raspberry Pi and sensors to demonstrate obstacle avoidance and lays the foundation for voice control and LiDAR-based navigation. The goal is to create a low-cost, AI-driven mobility aid.
 
-##Features
+## IntelliChair Demo
+**Demo Video**: https://youtu.be/4aEpP2LoGZE
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/170300e3-a0ef-4747-8bb9-a18ab83ad827" alt="Tank image 1" width="300" />
+  <img src="https://github.com/user-attachments/assets/af166ead-7633-4398-a476-4ac1d239a0d2" alt="Tank image 3" width="300" />
+</p>
+
+
+## Features
 - Ultrasonic Backup Detection: An HC-SR04 sensor that provides secondary close-range obstacle detection in case LiDAR data is not available or unreliable.
 - LiDAR-Based Obstacle Avoidance: Primary obstacle detection and mapping will rely on LiDAR to create real-time awareness of the environment.
 - Voice Command Interface: Users will be able to give spoken instructions (e.g., “Take me to the kitchen”).

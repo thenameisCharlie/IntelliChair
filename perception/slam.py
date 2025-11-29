@@ -1,161 +1,218 @@
 """
 perception/slam.py
-SLAM mapping wrapper for Yahboom G1 Tank
+SLAM orchestration for Intellichair.
 
-- Launches SLAM node (slam_toolbox)
-- Saves map as map.pgm + map.yaml
+- start_slam(): launch slam_toolbox online_async and return a Popen handle
+- save_map(handle, name=None): attempt to serialize map into ./maps/<name>
+  * If ROS2 serialize service is unavailable, write a harmless stub file
+- load_map(name): stub loader (extend if you rely on loading)
+- _get_current_pose_from_lidar(): stub (extend if you publish/subscribe TF)
+- teach_place(name): stub that records a named place with current pose (if available)
+
+This module intentionally avoids any GPIO usage to prevent crashes if
+GPIO pin mode has been cleaned up elsewhere.
 """
 
+from __future__ import annotations
+
 import os
-import subprocess
 import time
-from typing import Tuple
-import threading
-from perception.lidar import get_pose, lidar_thread
+import json
+import subprocess
+import shutil
+from pathlib import Path
+from typing import Optional, Tuple, Any
 
-_lidar_thread_started = False
-_lidar_thread_lock = threading.Lock()
+try:
+    from perception.lidar import get_pose as _lidar_get_pose
+except Exception:
+    _lidar_get_pose = None
 
-# repo-relative map directory
-MAP_DIR = os.path.join(os.getcwd(), "maps")
-MAP_BASENAME = "map"
+# Directory where maps and stubs are saved
+MAPS_DIR = Path("maps")
 
-def ensure_map_dir():
-    if not os.path.exists(MAP_DIR):
-        os.makedirs(MAP_DIR, exist_ok=True)
+POSE_FILE = Path("/tmp/ic_pose.json")
 
-def start_slam():
-    #launch slam_toolbox online_async as a subprocess (non-blocking).
-    #requires ROS2 environment on the Pi.
-    #returns subprocess.Popen
-    env = os.environ.copy()
-    env["PATH"] = "/opt/ros/humble/bin:" + env.get("PATH", "")
-    print("[slam] Starting SLAM (slam_toolbox online_async)...")
-    return subprocess.Popen(
-        ["ros2", "launch", "slam_toolbox", "online_async_launch.py"],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
 
-def save_map(basename=MAP_BASENAME):
-    #call nav2 map_saver_cli to write map to MAP_DIR/<basename>.pgm/.yaml
-    ensure_map_dir()
-    map_path = os.path.join(MAP_DIR, basename)
-    print(f"[slam] Saving map → {map_path}.pgm/.yaml ...")
+# -------------------- Utilities --------------------
+
+def ensure_map_dir() -> Path:
+    """Ensure the maps directory exists and return it."""
+    MAPS_DIR.mkdir(parents=True, exist_ok=True)
+    return MAPS_DIR
+
+
+def _timestamp() -> str:
+    return time.strftime("%Y%m%d_%H%M%S")
+
+
+def _ros2_available() -> bool:
+    """Return True iff 'ros2' CLI is available in PATH."""
+    return shutil.which("ros2") is not None
+
+
+def _try_ros2_serialize(out_stem: Path) -> None:
+    """
+    Try to call slam_toolbox's serialize service to save the current map/pose graph.
+    Adjust the service name below if your namespace differs.
+    """
+    # Common service names (some setups use leading /, some don't)
+    candidates = [
+        "/slam_toolbox/serialize_map",
+        "slam_toolbox/serialize_map",
+        "/serialize_map",
+        "serialize_map",
+    ]
+
+    # Prefer the official service type
+    service_type = "slam_toolbox/srv/SerializePoseGraph"
+
+    last_err: Optional[Exception] = None
+    for svc in candidates:
+        try:
+            # ros2 service call <name> <type> "filename: '<path>'"
+            cmd = [
+                "ros2", "service", "call",
+                svc,
+                service_type,
+                f"filename: '{str(out_stem)}'"
+            ]
+            # Use check=True so a nonzero exit raises CalledProcessError
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            print(f"[slam] serialize_map OK via service '{svc}' → {out_stem}")
+            return
+        except Exception as e:
+            last_err = e
+
+    # If we reach here, all candidates failed
+    raise RuntimeError(f"serialize_map service not available (last error: {last_err})")
+
+
+# -------------------- Public API --------------------
+
+def start_slam() -> subprocess.Popen:
+    """
+    Launch slam_toolbox (online_async) and return the Popen handle.
+    This assumes a ROS2 environment is already sourced in the current shell.
+
+    If you use a different launch file or namespace, adjust LAUNCH_CMD below.
+    """
+    # Example launch (most common):
+    LAUNCH_CMD = ["ros2", "launch", "slam_toolbox", "online_async_launch.py"]
+
+    # Start the process detached from our stdio (quiet by default).
+    # If you want logs in your terminal, remove stdout/stderr redirection.
     try:
-        subprocess.run([
-            "ros2", "run", "nav2_map_server", "map_saver_cli",
-            "-f", map_path
-        ], check=True)
-        print("[slam] Map saved.")
-    except Exception as e:
-        print(f"[slam] Map save failed: {e}")
+        proc = subprocess.Popen(
+            LAUNCH_CMD,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setpgrp  # avoid killing SLAM if Python exits abruptly
+        )
+        print("[slam] Starting SLAM (slam_toolbox online_async)...")
+    except FileNotFoundError as e:
+        # ros2 not found
+        raise RuntimeError(
+            "ROS2 not found. Ensure your environment is sourced (e.g., 'source /opt/ros/<distro>/setup.bash') "
+            "and slam_toolbox is installed."
+        ) from e
 
-def load_map(basename=MAP_BASENAME):
-    #launch nav2 bringup with a saved map. Returns the subprocess or None if not found.
-    map_path = os.path.join(MAP_DIR, basename + ".yaml")
-    if not os.path.exists(map_path):
-        print(f"[slam] ERROR: Map {map_path} not found.")
-        return None
-    print(f"[slam] Loading map {map_path} ...")
-    env = os.environ.copy()
-    env["PATH"] = "/opt/ros/humble/bin:" + env.get("PATH", "")
-    return subprocess.Popen([
-        "ros2", "launch", "nav2_bringup", "bringup_launch.py",
-        f"map:={map_path}"
-    ], env=env)
+    # Give slam_toolbox a moment to come up; adjust if needed
+    time.sleep(2.0)
+    return proc
+
+
+def save_map(slam_handle: Any = None, name: Optional[str] = None) -> Path:
+    """
+    Save/serialize the current map. The 'slam_handle' is typically a subprocess.Popen,
+    but we never treat it like a path.
+
+    Returns the base output stem Path (without extension); slam_toolbox typically
+    writes multiple files with this stem.
+
+    On failure to call ROS2 serialize service, a small stub file is written instead
+    to keep the pipeline from crashing.
+    """
+    maps_dir = ensure_map_dir()
+    stem = name or f"map_{_timestamp()}"
+    out_stem = maps_dir / stem  # e.g., maps/map_20250101_120102
+
+    # If ROS2 CLI isn't available, write a harmless stub and return
+    if not _ros2_available():
+        stub = out_stem.with_suffix(".txt")
+        stub.write_text(f"[slam] ROS2 not available; wrote stub at {time.ctime()}\n")
+        print(f"[slam] ros2 CLI not found; wrote stub {stub}")
+        return out_stem
+
+    # Try the serialize service
+    try:
+        _try_ros2_serialize(out_stem)
+        return out_stem
+    except Exception as e:
+        # Fallback: write stub so callers don't crash
+        stub = out_stem.with_suffix(".txt")
+        stub.write_text(
+            f"[slam] serialize_map unavailable ({e}); stub written at {time.ctime()}\n"
+            f"handle_type={type(slam_handle).__name__}\n"
+        )
+        print(f"[slam] serialize_map unavailable; wrote {stub}")
+        return out_stem
+
+
+def load_map(name: str) -> Path:
+    """
+    (Optional) Provide your load/deserialize behavior here.
+    For now, this just returns the expected stem path inside maps/.
+    """
+    maps_dir = ensure_map_dir()
+    stem = maps_dir / name
+    print(f"[slam] load_map stub → {stem}")
+    return stem
+
+
+# def _get_current_pose_from_lidar() -> Tuple[float, float, float]:
+#     """
+#     Stub: return (x, y, theta). Extend to read TF or your own pose provider.
+#     """
+#     # Replace with actual TF/pose graph query if available
+#     return (0.0, 0.0, 0.0)
 
 def _get_current_pose_from_lidar():
-    #read current pose from perception.lidar.get_pose() and return (x, y, theta).
-    #returns None if not available.
-    global _lidar_thread_started
-
-    with _lidar_thread_lock:
-        if not _lidar_thread_started:
-            t = threading.Thread(target=lidar_thread, daemon=True)
-            t.start()
-            _lidar_thread_started = True
-            time.sleep(1.0)
-
+    """
+    Return (x, y, theta) from the running LiDAR pose thread.
+    """
     try:
-        p = get_pose()
-        if p is None:
-            return None
-        if isinstance(p, (list, tuple)) and len(p) >= 3:
-            return float(p[0]), float(p[1]), float(p[2])
-        if isinstance(p, dict):
-            return float(p.get("x", 0.0)), float(p.get("y", 0.0)), float(p.get("theta", 0.0))
-        if hasattr(p, "x") and hasattr(p, "y") and hasattr(p, "theta"):
-            return float(p.x), float(p.y), float(p.theta)
-    except Exception as e:
-        print(f"[slam] Warning: error reading pose from perception.lidar: {e}")
-    return None
+        from perception.lidar import get_pose
+        return get_pose()  # thread-safe; returns latest pose
+    except Exception:
+        return (0.0, 0.0, 0.0)
 
-def teach_place(name: str, aliases=None, timeout=3.0, interval=0.2):
-    if aliases is None:
-        aliases = []
 
-    pose_tuple = None
-    elapsed = 0.0
-    while elapsed < timeout:
-        pose_tuple = _get_current_pose_from_lidar()
-        if pose_tuple and any(abs(v) > 1e-5 for v in pose_tuple):
-            break
-        time.sleep(interval)
-        elapsed += interval
+# def teach_place(name: str, places_path: Path | str = "navigation/places.json") -> None:
+#     """
+#     Stub: capture current pose under a human-friendly name and store it.
+#     Integrate with your navigation.Places class if you already have one.
+#     """
+#     try:
+#         from navigation.places import Places  # your repo's Places class
+#         pman = Places(places_path)
+#         x, y, th = _get_current_pose_from_lidar()
+#         pman.add_place(name, {"x": x, "y": y, "theta": th})
+#         pman.save()
+#         print(f"[slam] teach_place: '{name}' recorded at ({x:.2f}, {y:.2f}, {th:.2f})")
+#     except Exception as e:
+#         print(f"[slam] teach_place stub fallback ({e}); no place recorded.")
 
-    if pose_tuple is None or all(abs(v) < 1e-5 for v in pose_tuple):
-        print("[slam] Warning: timeout waiting for live pose. Using zeros.")
-        pose_tuple = (0.0, 0.0, 0.0)
-
-    x, y, theta = pose_tuple
-
+def teach_place(name: str, places_path: Path | str = "navigation/places.json") -> None:
     try:
-        from navigation.places import PlaceManager, Pose
+        # CHANGE import
+        from navigation.places import PlaceManager
+        pm = PlaceManager(str(places_path))
+        x, y, th = _get_current_pose_from_lidar()
+        # Build the small pose record your PlaceManager expects
+        from types import SimpleNamespace
+        pose = SimpleNamespace(x=x, y=y, theta=th)
+        pm.add_place(name, pose, aliases=[])
+        print(f"[slam] teach_place: '{name}' recorded at ({x:.3f}, {y:.3f}, {th:.3f})")
     except Exception as e:
-        print(f"[slam] ERROR: Could not import navigation.places: {e}")
-        return
-
-    pm = PlaceManager()
-    pm.add_place(name, Pose(x, y, theta), aliases=aliases)
-    print(f"[slam] Learned place '{name}' at x={x:.2f}, y={y:.2f}, θ={theta:.2f}")
-
-
-
-if __name__ == "__main__":
-    import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--start", action="store_true", help="Start SLAM process")
-    ap.add_argument("--save", action="store_true", help="Save map and exit")
-    ap.add_argument("--teach", type=str, help="Teach a named place from current SLAM pose")
-    ap.add_argument("--aliases", type=str, default="", help="Comma-separated aliases for teach")
-    args = ap.parse_args()
-
-    if args.start:
-        proc = start_slam()
-        try:
-            print("[slam] Running... Drive robot around with teleop or autonomy.")
-            while True:
-                time.sleep(2)
-        except KeyboardInterrupt:
-            print("\n[slam] Ctrl+C → stopping and saving map.")
-            save_map()
-        finally:
-            try:
-                proc.terminate()
-                proc.wait()
-            except Exception:
-                pass
-        raise SystemExit(0)
-
-    if args.save:
-        save_map()
-        raise SystemExit(0)
-
-    if args.teach:
-        aliases = [a.strip() for a in args.aliases.split(",")] if args.aliases else []
-        teach_place(args.teach, aliases)
-        raise SystemExit(0)
-
-    ap.print_help()
+        print(f"[slam] teach_place stub fallback ({e}); no place recorded.")
